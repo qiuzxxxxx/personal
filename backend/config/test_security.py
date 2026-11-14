@@ -54,13 +54,16 @@ class AccountAndFileTests(TestCase):
     def test_login_limit_uses_socket_address(self):
         cache.clear()
         self.addCleanup(cache.clear)
-        for count in range(13):
-            response = self.client.post(
-                reverse("auth-login"),
-                {"username": "qzx", "password": "incorrect"},
-                HTTP_X_FORWARDED_FOR=f"192.0.2.{count + 1}",
-            )
-            self.assertEqual(response.status_code, 401 if count < 12 else 429)
+        # The limiter buckets by wall-clock; pin the clock so a 5-minute
+        # boundary cannot reset the counters in the middle of this test.
+        with patch("accounts.views.time", return_value=1_700_000_000.0):
+            for count in range(13):
+                response = self.client.post(
+                    reverse("auth-login"),
+                    {"username": "qzx", "password": "incorrect"},
+                    HTTP_X_FORWARDED_FOR=f"192.0.2.{count + 1}",
+                )
+                self.assertEqual(response.status_code, 401 if count < 12 else 429)
 
     def test_private_transfer_uses_owner_id(self):
         anonymous = TransferFile.objects.create(uploader_name="yk", is_public=False)

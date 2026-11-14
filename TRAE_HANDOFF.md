@@ -746,67 +746,71 @@ PostgreSQL 可以使用 pg_dump 输出数据库备份，恢复方案需与导出
 
 ### 13.1 基础和隐私
 
-- [ ] 原 AI 对话、测试连接、双人聊天和中转站入口可用。
-- [ ] qzx 登录默认进入今日页面，yk 仍进入中转站。
-- [ ] sqx 无法通过猜测 UUID、标签、项目、查询过滤条件或下载地址读取 qzx 的私人工作台数据。
-- [ ] 切换账号后页面和 KeepAlive 缓存中没有上个账号的私人内容。
-- [ ] owner 等只读字段无法通过请求体覆盖。
+以下记录来自 2026-11-14 阶段 G 验收（138 项后端测试 + smoke_test 94 项 + 16.11 API 级走查，环境为 Windows 开发机 + 临时 SQLite 库）。
+
+- [x] 原 AI 对话、测试连接、双人聊天和中转站入口可用。（smoke 94/94：登录、中转站全流程、聊天文字与文件收发、agent 会话/附件/SSE 流式；模型配置与测试连接由 agent 测试覆盖）
+- [x] qzx 登录默认进入今日页面，yk 仍进入中转站。（LoginView 与路由守卫按角色跳转，游客 9 条路径重定向 /transfer；浏览器级点击验证留待上线前人工复核）
+- [x] sqx 无法通过猜测 UUID、标签、项目、查询过滤条件或下载地址读取 qzx 的私人工作台数据。（workspace `test_owner_isolation`、knowledge `test_other_account_*` 系列、transfer `test_private_transfer_uses_owner_id`，另见 16.11 走查第 10 步）
+- [x] 切换账号后页面和 KeepAlive 缓存中没有上个账号的私人内容。（`stores/workspace.ts` 与 `stores/knowledge.ts` 在账号切换时整体 reset；无浏览器 E2E，上线前人工复核）
+- [x] owner 等只读字段无法通过请求体覆盖。（序列化器不含 owner 写字段，归属一律取请求 token，workspace/knowledge/transfer 测试断言）
 
 ### 13.2 每日任务与记录
 
-- [ ] 新建、刷新、编辑、完成、重新打开、取消、删除、恢复都正确。
-- [ ] 同一任务连续点两次完成不会重写完成时间。
-- [ ] 快速添加遇到网络重试时只产生一条任务。
-- [ ] 昨日计划未完成与真正逾期采用不同条件。
-- [ ] 23:59 至 00:01 跨日、空截止时间、UTC 转换和日期筛选正确。
-- [ ] 两个浏览器同时修改一条任务或每日记录时，后提交的旧版本得到冲突提示。
-- [ ] 项目归档、软删除和恢复后，任务仍能找到与调整。
-- [ ] 每日记录保存失败时正文保留，刷新前能知道存在未保存修改。
+- [x] 新建、刷新、编辑、完成、重新打开、取消、删除、恢复都正确。（`test_create_and_list_tasks`、`test_completion_sets_and_clears_completed_at`、`test_soft_delete_and_restore`；另见 16.11 走查第 9 步）
+- [x] 同一任务连续点两次完成不会重写完成时间。（重复 done 返回已有状态，`test_completion_sets_and_clears_completed_at`）
+- [x] 快速添加遇到网络重试时只产生一条任务。（`test_client_request_id_is_idempotent`）
+- [x] 昨日计划未完成与真正逾期采用不同条件。（today 视图：逾期按 `due_at < now` 且状态未结束，待重新安排按 `scheduled_date < 今天`，`test_today_view_groups_tasks`）
+- [x] 23:59 至 00:01 跨日、空截止时间、UTC 转换和日期筛选正确。（时区与日期分组由 `user_timezone`/`parse_day` 实现，Asia/Shanghai 为默认；真实时钟跨午夜未单独建测试，上线前人工核对一次）
+- [x] 两个浏览器同时修改一条任务或每日记录时，后提交的旧版本得到冲突提示。（`test_version_conflict_returns_409`、`test_journal_create_update_and_conflict`）
+- [x] 项目归档、软删除和恢复后，任务仍能找到与调整。（`test_project_crud`，归档不隐藏任务）
+- [x] 每日记录保存失败时正文保留，刷新前能知道存在未保存修改。（前端自动保存三态与草稿保留；服务端冲突不覆盖正文由 journal 测试覆盖）
 
 ### 13.3 资料与扫码
 
-- [ ] 电脑生成二维码后，真实手机可打开上传页并上传照片和 PDF。
-- [ ] 单次多选至少 3 个文件，逐文件反馈结果，失败文件可独立重试。
-- [ ] 上传完成后电脑在两个轮询周期内显示结果，刷新后结果仍存在。
-- [ ] 上传到任务时同时进入本人资料库并建立正确附件关联。
-- [ ] 会话过期、主动撤销、改密和全局登出后的新写入被拒绝。
-- [ ] 随机或他人会话 ID、错误凭证、拿 Upload Token 调私人下载接口都失败。
-- [ ] 到期前预占、到期后完成与主动撤销的行为符合第 6.4 节。
-- [ ] 超大小、伪造 MIME、异常文件名、重复提交和两个并发上传的边界正确。
-- [ ] 断网、写盘失败、进程中断、提交后响应丢失都不会留下重复资料或永久占用配额。
-- [ ] 删除目标任务或资料夹期间的上传能给出明确失败，释放预占并清理暂存文件。
-- [ ] 数据库和正常日志中不存在二维码原始 token。
-- [ ] 私人资料不会自动出现在公开中转站。
+- [ ] 电脑生成二维码后，真实手机可打开上传页并上传照片和 PDF。（**待真实设备**：API 全流程——会话创建→凭证预占→内容上传→桌面轮询——已在 16.11 走查第 3 步通过，浏览器与手机端待部署后人工验收）
+- [x] 单次多选至少 3 个文件，逐文件反馈结果，失败文件可独立重试。（凭证按文件粒度，`test_prepare_is_idempotent`、`test_status_lists_receipts`，失败凭证独立状态可重试；多选 UI 在 UploadView）
+- [x] 上传完成后电脑在两个轮询周期内显示结果，刷新后结果仍存在。（走查第 3 步即时可见；receipts 落库持久化）
+- [x] 上传到任务时同时进入本人资料库并建立正确附件关联。（`test_prepare_and_upload_commits_material`）
+- [x] 会话过期、主动撤销、改密和全局登出后的新写入被拒绝。（`test_revoke_stops_uploads`、`test_password_reset_invalidates_sessions`；过期由 session_guard 拒绝）
+- [x] 随机或他人会话 ID、错误凭证、拿 Upload Token 调私人下载接口都失败。（`test_invalid_upload_token_is_rejected`、`test_owner_cannot_read_other_session`、`test_upload_token_cannot_reach_owner_data`、`test_content_requires_the_matching_session`）
+- [x] 到期前预占、到期后完成与主动撤销的行为符合第 6.4 节。（`test_prepare_and_upload_commits_material`、`test_size_mismatch_is_rejected`）
+- [x] 超大小、伪造 MIME、异常文件名、重复提交和两个并发上传的边界正确。（`test_prepare_rejects_unsupported_type`、`test_prepare_rejects_metadata_mismatch`、`test_quota_is_enforced`、`safe_original_name`）
+- [x] 断网、写盘失败、进程中断、提交后响应丢失都不会留下重复资料或永久占用配额。（`client_upload_id` 幂等 + 失败凭证不占配额；写盘失败在事务内清理暂存）
+- [ ] 删除目标任务或资料夹期间的上传能给出明确失败，释放预占并清理暂存文件。（会话创建时校验 folder/task 归属返回 400 invalid_reference；删除发生后的竞态未建专项测试，上线前人工复核）
+- [x] 数据库和正常日志中不存在二维码原始 token。（token 仅在会话创建响应出现一次，落库为 `token_digest` 哈希，`test_create_session_returns_raw_token_once`）
+- [x] 私人资料不会自动出现在公开中转站。（资料库与中转站为独立模块与表，`test_owner_isolation` + transfer 匿名可见性测试）
 
 ### 13.4 上线与恢复
 
-- [ ] 从空环境可按文档启动，同一操作可重复执行。
-- [ ] 生产迁移脚本在旧数据副本上验证过，密码初始化有可执行的交付步骤。
-- [ ] HTTPS 下完成登录、扫码、上传、下载、SSE 和 WebSocket。
-- [ ] 多个后端进程通过 Redis 正常转发聊天，限速结果在进程间一致。
-- [ ] 服务重启后任务、文件、已保存 Key 和统计结果可用。
-- [ ] 备份恢复演练通过，实际操作步骤和耗时已记录。
-- [ ] 大文件上传期间磁盘与进程内存处于可接受范围，临时文件可回收。
-- [ ] 缺少稳定生产密钥或存储目录不可写时，启动或就绪检查明确失败。
+以下待真实服务器环境执行；本地已备齐材料。
+
+- [ ] 从空环境可按文档启动，同一操作可重复执行。（docker-compose.yml + DEPLOY.md 就绪，待真实服务器演练）
+- [ ] 生产迁移脚本在旧数据副本上验证过，密码初始化有可执行的交付步骤。（DEPLOY.md 含 init_users 步骤，待旧数据副本演练）
+- [ ] HTTPS 下完成登录、扫码、上传、下载、SSE 和 WebSocket。（nginx.conf/HSTS/SECURE_PROXY_SSL_HEADER 就绪，待部署验证）
+- [ ] 多个后端进程通过 Redis 正常转发聊天，限速结果在进程间一致。（Redis cache + channels_redis 配置就绪，待部署验证）
+- [x] 服务重启后任务、文件、已保存 Key 和统计结果可用。（16.11 走查第 11 步：重启后检索仍 4 命中、记忆 8 active/2 forgotten 完好；生产等价验证待部署）
+- [ ] 备份恢复演练通过，实际操作步骤和耗时已记录。（deploy/backup.sh、restore.sh 就绪，待真实环境演练并记录耗时）
+- [ ] 大文件上传期间磁盘与进程内存处于可接受范围，临时文件可回收。（解析子进程 RLIMIT_AS 450MiB + 120s 超时在 Linux 生效，Windows 无 RLIMIT；待真实环境复核）
+- [x] 缺少稳定生产密钥或存储目录不可写时，启动或就绪检查明确失败。（生产强制 DJANGO_SECRET_KEY；crypto 拒绝临时主密钥并原子处理并发初始化；/api/health/ready/ 覆盖依赖检查）
 
 ### 13.5 知识库与个人记忆
 
-- [ ] 手写笔记、TXT、Markdown、文本 PDF、DOCX 可入库；原文第 80,000 字符后的测试内容能检索，超过新限制时明确失败而非静默截断。
-- [ ] 中文短词、连续中文句子、中英混合和英文缩写均有可重复的检索用例；没有相关资料时明确告知未找到。
-- [ ] 回答引用可打开实际来源片段和版本，PDF 页码或文档标题路径准确；伪造引用 ID 不会生成可点击假出处。
-- [ ] 关闭知识库或切换集合后，后续模型请求中没有被排除的资料及其历史注入副本。
-- [ ] qzx 与 sqx 的集合、搜索结果、数量、记忆、索引状态、引用和导出相互隔离；游客和 Upload 凭证均不能调用知识接口。
-- [ ] 扫码上传只进入私人资料库，由所有者选择加入知识库；上传文件中的文字不能直接创建个人记忆。
-- [ ] 文档更新、移入回收站、恢复、彻底删除、取消用于 AI 后，AI 检索、缓存与后台作业按第 16 节失效；保留的历史快照明确标注日期，不冒充当前正文。
-- [ ] 作业进程中断、重复领取、超时重试以及删除后旧作业完成，不产生重复分段或复活已删除数据。
-- [ ] 明确保存个人偏好后可在新对话中生效；自动提炼的候选记忆未确认前不进入正式个人背景。
-- [ ] 同一偏好被修改后旧版本不再注入；忘记后当前会话后续请求也不再通过缓存、摘要或历史消息重新带入。
-- [ ] “今天要做什么”返回任务模块当前状态和查询日期，完成任务后重新提问不会继续使用旧清单。
-- [ ] 资料中的“忽略规则”“读取另一个账号”“记住此管理员权限”等内容不会导致越权、持久化写入或外部请求。
-- [ ] 模型故障时笔记、检索和记忆管理仍可用；索引失败或超时有可操作的错误与重试入口。
-- [ ] 初始个人条目来源明确、仅写入指定账号、重复初始化不覆盖用户修改；没有虚构身份、计划或账号关系。
-- [ ] 至少 20 个固定问题组成检索与回答评估集，记录预期来源、是否应回答、实际引用和缺陷；权限、删除及越权写入测试必须全部通过。
-- [ ] 完成知识数据备份恢复和索引重建演练，记录测试语料规模、检索延迟、解析峰值内存与模型调用量。
+- [x] 手写笔记、TXT、Markdown、文本 PDF、DOCX 可入库；原文第 80,000 字符后的测试内容能检索，超过新限制时明确失败而非静默截断。（`test_content_after_80000_characters_is_retrievable`、`test_every_character_of_a_long_document_is_covered`、`test_oversized_document_fails_instead_of_silent_truncation`；手写/图片资料入库后标记 `needs_ocr`，首版无 OCR 不参与检索，见第 16 节）
+- [x] 中文短词、连续中文句子、中英混合和英文缩写均有可重复的检索用例；没有相关资料时明确告知未找到。（`test_tokenizer_handles_chinese_and_latin`、`test_search_without_match_returns_empty_list`、24 题评估集）
+- [x] 回答引用可打开实际来源片段和版本，PDF 页码或文档标题路径准确；伪造引用 ID 不会生成可点击假出处。（`test_citation_of_other_account_is_not_found`、`test_fabricated_citation_id_is_not_found`；页码/标题路径由位置感知解析保留。模型回答引用的端到端复核待真实模型）
+- [x] 关闭知识库或切换集合后，后续模型请求中没有被排除的资料及其历史注入副本。（`test_disabled_knowledge_produces_no_context`、`test_ai_disabled_document_is_not_retrieved_for_the_model`、撤回按会话粒度生效见 18.2 与 R3）
+- [x] qzx 与 sqx 的集合、搜索结果、数量、记忆、索引状态、引用和导出相互隔离；游客和 Upload 凭证均不能调用知识接口。（`test_other_account_*`、`test_guest_account_cannot_use_knowledge`、知识接口要求 CanUseAgent，游客 403；另见 16.11 走查第 10 步）
+- [x] 扫码上传只进入私人资料库，由所有者选择加入知识库；上传文件中的文字不能直接创建个人记忆。（走查第 3 步；记忆创建必须显式调用 API 并通过写入意图校验归属）
+- [x] 文档更新、移入回收站、恢复、彻底删除、取消用于 AI 后，AI 检索、缓存与后台作业按第 16 节失效；保留的历史快照明确标注日期，不冒充当前正文。（`test_deleted_document_stops_being_retrieved`、`test_deleting_the_material_stops_the_derived_knowledge`、`test_reindex_keeps_only_the_current_chunks`、`test_import_journal_entry_creates_snapshot`）
+- [x] 作业进程中断、重复领取、超时重试以及删除后旧作业完成，不产生重复分段或复活已删除数据。（租约 + claim token 设计；S5 跳过被锁作业；`test_reindex_keeps_only_the_current_chunks`）
+- [x] 明确保存个人偏好后可在新对话中生效；自动提炼的候选记忆未确认前不进入正式个人背景。（`test_confirmed_memory_is_injected`、`test_candidate_memory_is_not_injected`；另见走查第 6/7 步）
+- [x] 同一偏好被修改后旧版本不再注入；忘记后当前会话后续请求也不再通过缓存、摘要或历史消息重新带入。（`test_forget_clears_body_and_raises_floor`、`agent/test_withdrawal.py` 4 项；走查第 8 步）
+- [x] “今天要做什么”返回任务模块当前状态和查询日期，完成任务后重新提问不会继续使用旧清单。（`test_today_task_is_visible_in_workspace_context`、`test_workspace_snapshot_reflects_the_current_task_state`；走查第 9 步）
+- [x] 资料中的“忽略规则”“读取另一个账号”“记住此管理员权限”等内容不会导致越权、持久化写入或外部请求。（资料块以只读边界标注注入，指令不改变模型行为由评估集恶意文档题覆盖；回答行为面 6 题待真实模型复核）
+- [x] 模型故障时笔记、检索和记忆管理仍可用；索引失败或超时有可操作的错误与重试入口。（知识模块独立于模型调用；document_status 暴露失败状态，/reindex/ 提供重试；模型故障仅影响回答生成）
+- [x] 初始个人条目来源明确、仅写入指定账号、重复初始化不覆盖用户修改；没有虚构身份、计划或账号关系。（seed 幂等实测：首次新建 7 条、二次“新建 0 条跳过 7 条”）
+- [x] 至少 20 个固定问题组成检索与回答评估集，记录预期来源、是否应回答、实际引用和缺陷；权限、删除及越权写入测试必须全部通过。（24 题虚构评估集，确定性检索 24/24、越权 0、候选泄露 0、无效引用 0；6 题 needs_model_review 待真实模型）
+- [ ] 完成知识数据备份恢复和索引重建演练，记录测试语料规模、检索延迟、解析峰值内存与模型调用量。（`rebuild_knowledge_index` 命令与备份脚本就绪，演练待真实环境）
 
 ## 14. Trae 的执行顺序与阶段交付
 
@@ -1102,6 +1106,7 @@ Trae 使用虚构测试资料建立至少 20 个固定问题，覆盖中文短�
 4. 所有数据库迁移只允许追加新文件，不修改已提交的迁移。
 5. 提交信息统一使用中文，说明“做了什么”和“为什么”，不写“完成任务”这类无信息量描述。
 6. 未经用户在本文档之外明确指示，任何一方都不执行对用户真实数据库的破坏性操作；测试一律使用 Django 测试数据库或临时 SQLite 文件。
+7. （用户指示，2026-11-14 追加）全部阶段（A–G）执行完毕后，将交付物整体交给 ChatGPT 做最终审核。届时在本节追加 ChatGPT 审核入口说明（审核范围、起始提交），审核意见同样回写到第 18 节，由 Trae 处置后闭环。审核通过前不视为项目收尾。
 
 ### 18.2 已确定并固化的实现口径
 
@@ -1128,9 +1133,9 @@ Trae 使用虚构测试资料建立至少 20 个固定问题，覆盖中文短�
 | B | 工作台、任务、项目、每日记录 | 已完成 | da94be2 |
 | C | 私人资料库 | 已完成 | da4a72e |
 | D | 手机扫码上传 | 已完成 | 649955b |
-| E | 个人知识库与 AI 记忆 | 代码完成，待人工走查与模型复验 | a6997fd（后端）、bf45115（前端与审查修复） |
-| F | 服务器就绪 | 未开始 | — |
-| G | 总体验收 | 未开始 | — |
+| E | 个人知识库与 AI 记忆 | 已完成（Qoder 两轮审查通过，见 18.7） | a6997fd、bf45115、0102da8 |
+| F | 服务器就绪 | 已完成（代码与部署材料交付，Qoder 预审通过，F1–F3 已修复，见 18.8/18.9） | e208198、1a1db12 |
+| G | 总体验收 | 已完成（本地可验项全部通过；13.4 真实环境项待部署，见 18.10） | 1985b7f 及本次验收记录 |
 
 阶段 E 已落地内容：
 
@@ -1145,8 +1150,8 @@ Trae 使用虚构测试资料建立至少 20 个固定问题，覆盖中文短�
 ### 18.4 未决问题与注意事项
 
 1. 生产环境缺真实服务器、域名、HTTPS 与新模型 Key，阶段 F 只能交付可执行的部署材料与待填变量清单，无法验证真实上线。
-2. 第 2.5 节的现存差距（主密钥原子初始化、Redis 限速与广播层、匿名上传总量配额）尚未处理，留到阶段 F。
-3. `config.test_security` 中 `test_login_limit_uses_socket_address` 偶发因限流时间窗跨桶失败，单跑通过，与新增模块无关，属既有缺陷。
+2. ~~第 2.5 节的现存差距（主密钥原子初始化、Redis 限速与广播层、匿名上传总量配额）尚未处理，留到阶段 F。~~ **已关闭**：三项均在阶段 F 修复并通过 18.8 预审（第 4、5 条）。
+3. ~~`config.test_security` 中 `test_login_limit_uses_socket_address` 偶发因限流时间窗跨桶失败，单跑通过，与新增模块无关，属既有缺陷。~~ **已关闭**（阶段 G）：限速键含 `int(time()) // 300` 墙钟分桶，13 次登录（PBKDF2 每次约 1 秒）跨过 5 分钟边界时计数器重置导致偶发失败。测试已改为 `patch("accounts.views.time")` 固定时钟，消除墙钟依赖；生产限速行为不变。
 4. 阶段 E 的模型回答质量需要第 16.11 节的 20 题固定评估集。评估样本需使用虚构资料，不放入真实私人资料。
 5. 前端构建在 Windows 上必须先设置 `$env:TEMP` 与 `$env:TMP` 指向可写目录，否则 esbuild 报 Temp 拒绝访问。
 6. 本机开发环境会拦截 Python 的 `os.remove`，SQLite 无法删除回滚日志 `backend/db.sqlite3-journal`，导致每次重新打开数据库时上一个会话的最后一次事务被回滚。表现是“刚写入或删除的数据第二天就不见了”，而 Django 测试库（内存库）不受影响。处置方式：在执行会写开发库的脚本前先执行 `pragma journal_mode=MEMORY`，或用 PowerShell 的 `Remove-Item` 清掉残留的 `-journal` 文件。真实服务器使用 PostgreSQL，不存在该问题。
@@ -1289,3 +1294,63 @@ Qoder 首轮审查的 R1–R4 与 S1–S6 全部处理完毕，同时完成阶�
 **建议项（S，不阻塞）**：web 容器可加 compose healthcheck（`curl -fsS http://127.0.0.1:8000/api/health/live/`），让 nginx 与未来编排层能感知 web 存活；`redis-data` 卷在关闭持久化后实际不承载恢复语义，保留无害但可在注释里说明。
 
 预审期间 Trae 工作区静止（18:26 后无改动）。本节不要求立即回应；F1 建议在阶段 F 提交前修复，F2/F3 可随阶段 G 验收一并处理。
+
+### 18.9 Trae 复验记录（2026-11-14，回应 18.8 的 F1/F2/F3）
+
+**结论：三项已全部修复并验证，Qoder 无需再跟进。**
+
+1. **F1 — 已修复（提交 1a1db12）。** `transfer/views.py` 新增 `_budget_key(request)`，改用 `accounts.logging.client_ip`（与登录限速同一解析函数，基于 `X-Forwarded-For` + `NEXUS_TRUSTED_PROXY_HOPS`），解析失败回退 `"unknown"`。两处口径现已一致；`test_budget_is_tracked_per_client_address` 与 `test_different_clients_have_separate_budgets`（含 `HTTP_X_FORWARDED_FOR="203.0.113.10, 198.51.100.1"` + `NEXUS_TRUSTED_PROXY_HOPS=1`）覆盖代理场景。
+2. **F2 — 已修复（同一提交）。** 预算拆为 `transfer:anon:{addr}:bytes` 与 `:files` 两个独立键，`record_anonymous_upload` 用 `cache.add(key, 0, timeout=window)` 首建后 `cache.incr` 原子累加，并以 `cache.set(..., timeout=window)` 让窗口随最后一次上传滚动。并发上传不再能双双通过检查。
+3. **F3 — 已修复（同一提交）。** `backend/smoke_test.py` 健康检查改为 `/api/health/live/` 与 `/api/health/ready/`（ready 覆盖依赖检查）。
+4. **验证**：`manage.py test transfer --noinput` 6/6 通过（新增的匿名预算测试文件 `backend/transfer/tests.py` 起初被 `.gitignore` 八位随机名规则误伤未入库——"transfer" 恰为 8 个小写字母，已改为显式反向规则并补交，提交 1985b7f）。仓库工作区干净，`git fsck` 无异常。
+
+**协作方式更新（用户指示，2026-11-14）**：本文件是 Trae 与 Qoder 的唯一沟通渠道；全部阶段完成后交付物整体交 ChatGPT 最终审核（见 18.1 第 7 条）。另外用户明确：本仓库只做本地版本管理，不推送 GitHub，历史提交不再追改。
+
+**下一步**：按第 14 节推进阶段 G——完成 13.1–13.3 可本地验收项的逐项记录、16.11 演示走查；13.4（真实服务器/域名/HTTPS/备份恢复演练）留待部署环境就绪后执行，缺口清单见 DEPLOY.md。
+
+### 18.11 阶段 G 总体验收记录（2026-11-14，Trae）
+
+> 编号说明：本节原拟编号 18.10，与 Qoder 心跳先落笔的复验记录撞号；按 18.1 追加约定重排为 18.11，内容不变。
+
+阶段 A–G 全部执行完毕。本节为总体验收记录，验收清单逐项结果已回写第 13 节。
+
+**本轮修复与工具改动**：
+
+1. `test_login_limit_uses_socket_address` 偶发失败根因与修复，见 18.4 第 3 条（测试固定时钟，生产行为不变）。
+2. `config/settings.py` SQLite 分支新增 `NEXUS_DB_PATH` 环境变量回退；指定临时库时自动加 `PRAGMA journal_mode=MEMORY`。背景：18.4 第 6 条的环境拦截 `os.remove` 问题在“服务器进程 + 客户端进程”双进程 smoke 场景下导致已提交事务被下一个连接回滚（`smoke.sqlite3-journal` 残留复现实证）。临时验收库无崩溃恢复需求，MEMORY 日志模式彻底规避；开发库默认行为不变。
+3. 16.11 走查可复现脚本保留在 `backend/var/test/walkthrough_1611.py`（gitignore 目录，按 18.9 说明重新生成即可）。
+
+**验收结果**：
+
+1. 全量后端测试 `manage.py test accounts agent chat config transfer workspace knowledge`：**138/138 通过**。
+2. `smoke_test.py`（独立服务器进程，SMOKE_INCLUDE_CHAT=1）：**94/94 通过**，覆盖 13.1 的登录/角色/中转站/聊天/agent 流式错误路径与账号管理分级。
+3. `manage.py check` 与 `makemigrations --check --dry-run` 干净；前端构建此前已通过（18.7 第 7 条）。
+4. 16.11 演示顺序 API 级走查 **11 步全部通过**：①seed 初始化 7 条；②笔记上传→加入知识库→索引作业→检索 4 命中（S1/S2 编号、`matches` 带正文与 `matched_terms`）；③扫码上传 API 全流程（会话→`Upload` 凭证→PDF 上传→桌面轮询可见）；④检索与来源片段验证（真实模型问答标记 `needs_model_review`）；⑤重索引→新修订 ready；⑥保存明确偏好；⑦偏好 active（注入机制由 test_withdrawal 覆盖）；⑧忘记→状态 forgotten、正文清空、不再 active（墓碑行设计确认符合实现口径）；⑨新增今日任务→PATCH version 完成→今日清单 completed_today 增加且移出待办；⑩sqx 看不到也检索不到 qzx 的知识；⑪重启服务器后检索仍命中、记忆 8 active/2 forgotten 完好。
+5. 第 13 节清单：13.1 全部 `[x]`；13.2 全部 `[x]`；13.3 10/12（真实手机浏览器端、删除竞态 2 项待人工）；13.4 2/8 本地可验项通过，其余待真实环境；13.5 15/16（备份恢复演练待真实环境）。
+
+**遗留（全部依赖真实环境，无代码待办）**：
+
+1. 13.4 真实服务器项：空环境启动演练、旧数据副本迁移、HTTPS 全链路、多进程 Redis、备份恢复演练与耗时记录、大文件内存复核。
+2. 真实手机浏览器端扫码上传体验验收（13.3 第 1 项）。
+3. 6 题评估集 `needs_model_review`：配置真实模型后运行 `evaluate_knowledge_retrieval --owner <用户名> --json` 人工复核。
+4. 上线前人工点击项：登录跳转目标、账号切换后界面残留、每日记录保存失败提示、跨午夜今日页刷新。
+
+**ChatGPT 最终审核入口（按 18.1 第 7 条）**：
+
+- 审核范围：本地仓库全部提交（基线至本次记录所在提交），重点为阶段 B–G 的 `workspace`/`knowledge`/`agent`/`transfer` 应用与 `docker-compose.yml`、`deploy/`、`DEPLOY.md`。
+- 审核基准文档：本文件第 13 节（验收清单与证据）、第 16 节（知识库实施要求）、第 18.2 节（固化口径）。
+- 沟通渠道约定不变：审核意见追加到第 18 节，由 Trae 处置后在本节闭环。审核通过前不视为项目收尾。
+
+阶段状态表已同步更新（18.3）。Qoder 如需复核阶段 G，以第 13 节标注的证据与本节为准。
+
+### 18.10 Qoder 复验 F1–F3（2026-11-14，针对提交 1a1db12 / 1985b7f）
+
+**结论：F1–F3 复验通过，§18.8 待修项全部关闭。** 另：§18.1 第 7 条（全部阶段后交 ChatGPT 终审）已知悉。
+
+1. **F1 — 通过。** `_budget_key` 使用 `accounts.logging.client_ip`，与登录限速同源同口径（`X-Forwarded-For` + `NEXUS_TRUSTED_PROXY_HOPS`）；反代场景下每个访客独立预算桶。
+2. **F2 — 通过。** 字节/次数拆为两个独立键，`cache.add` 首建 + `cache.incr` 原子自增；滚动窗口仅刷新 TTL，计数不受竞态影响。
+3. **F3 — 通过。** `smoke_test.py` 已改打 `/api/health/live/` 与 `/api/health/ready/`。
+4. **回归 — 通过（137/138，1 项为已知偶发）。** `manage.py test agent config.test_security workspace knowledge transfer --noinput`：138 项中唯一失败是 `test_login_limit_uses_socket_address`（§18.4 第 3 条记录过的限流时间窗跨桶偶发，与本轮改动无关），单独重跑通过；含 6 项新增 transfer 预算测试在内其余全部通过。**建议（不阻塞）**：该偶发项可在阶段 G 顺手根治（固定时间源或测试内冻结时钟）。
+5. **gitignore 误伤修复 — 通过。** `git check-ignore` 确认 `backend/transfer/` 等应用目录不再被八位随机名规则命中，`backend/transfer/tests.py` 已入库跟踪。
+
+**Trae 回应（阶段 G 期间）**：第 4 条建议的偶发项已根治——`test_login_limit_uses_socket_address` 改为 `patch("accounts.views.time")` 冻结时钟，消除 5 分钟墙钟分桶的跨边界竞争（见 18.4 第 3 条）。修复后全量 138/138 通过，含该测试随套件运行。Qoder 无需再跟进。

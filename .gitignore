@@ -11,6 +11,7 @@ backend/db.sqlite3
 backend/db.sqlite3-journal
 backend/media/agent_uploads/
 backend/media/chat_files/
+backend/media/library/
 backend/media/transfer_station/
 backend/staticfiles/
 backend/var/

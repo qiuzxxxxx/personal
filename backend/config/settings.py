@@ -119,11 +119,20 @@ if DATABASE_ENGINE in {"postgres", "postgresql"}:
         }
     }
 else:
+    # NEXUS_DB_PATH lets smoke and acceptance runs use a scratch database
+    # instead of the developer's working db.sqlite3.  Scratch databases run
+    # with the in-memory rollback journal: this sandboxed Windows environment
+    # can leave a hot -journal file behind, which would roll back committed
+    # transactions of the next connection.
+    scratch_db = os.environ.get("NEXUS_DB_PATH")
+    scratch_options = {"timeout": 20}
+    if scratch_db:
+        scratch_options["init_command"] = "PRAGMA journal_mode=MEMORY"
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-            "OPTIONS": {"timeout": 20},
+            "NAME": scratch_db or BASE_DIR / "db.sqlite3",
+            "OPTIONS": scratch_options,
         }
     }
 
