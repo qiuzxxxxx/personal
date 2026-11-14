@@ -115,7 +115,12 @@ def score_text(text: str, terms: list[str]) -> tuple[float, list[str]]:
 
 
 def scope_queryset(owner, *, collection_ids=None, scope: str = "all", for_ai: bool = False):
-    """Documents the owner may read, restricted to the requested scope."""
+    """Documents the owner may read, restricted to the requested scope.
+
+    A document whose source has been deleted or withdrawn stops being
+    retrievable immediately (section 16.4): the derived copy must not
+    outlive the original.
+    """
     queryset = KnowledgeDocument.objects.filter(
         owner=owner, deleted_at__isnull=True
     ).select_related("current_revision", "collection")
@@ -125,7 +130,15 @@ def scope_queryset(owner, *, collection_ids=None, scope: str = "all", for_ai: bo
         queryset = queryset.none()
     if for_ai:
         queryset = queryset.filter(ai_enabled=True)
-    return queryset
+    # A derived document whose source is gone (deleted, withdrawn or removed)
+    # must not be retrievable any more.
+    return queryset.exclude(
+        Q(source_type="material", source_material__isnull=True)
+        | Q(source_type="journal_entry", source_entry__isnull=True)
+        | Q(source_type="ai_message", source_message__isnull=True)
+        | Q(source_type="material", source_material__deleted_at__isnull=False)
+        | Q(source_type="journal_entry", source_entry__deleted_at__isnull=False)
+    )
 
 
 def search(
