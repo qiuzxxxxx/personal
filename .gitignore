@@ -16,9 +16,18 @@ backend/staticfiles/
 backend/var/
 !backend/media/**/.gitkeep
 
-# Test scratch directories (the platform temp dir may fall back to the repo)
+# Test scratch directories and stray temporary files (the platform temp dir
+# may fall back to the repository root). The application packages are
+# re-included explicitly because their names are eight characters long too.
 backend/*-test-*/
-backend/[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]
+/backend/[0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z]
+!/backend/accounts/
+!/backend/agent/
+!/backend/chat/
+!/backend/config/
+!/backend/knowledge/
+!/backend/transfer/
+!/backend/workspace/
 
 # Frontend
 frontend/node_modules/
