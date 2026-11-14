@@ -152,10 +152,25 @@ def _limit_process() -> None:  # pragma: no cover - runs in the child process
         pass
 
 
+def _parse_work_dir() -> Path:
+    """A dedicated scratch directory for the parse subprocess.
+
+    It is not the system temp directory: the worker writes the input and
+    output files there and must be able to clean them up on every platform.
+    """
+    from django.conf import settings
+
+    base = Path(settings.BASE_DIR) / "var" / "parse"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
 def run_parse_subprocess(filename: str, source: dict) -> dict:
     """Parse a source in a separate process and return its result."""
     backend_dir = Path(__file__).resolve().parent.parent
-    with tempfile.TemporaryDirectory(prefix="knowledge-parse-") as workdir:
+    with tempfile.TemporaryDirectory(
+        prefix="knowledge-parse-", dir=str(_parse_work_dir()), ignore_cleanup_errors=True
+    ) as workdir:
         input_path = Path(workdir) / "input.json"
         output_path = Path(workdir) / "output.json"
         input_path.write_text(

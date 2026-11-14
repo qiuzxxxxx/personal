@@ -13,6 +13,7 @@ backend/media/agent_uploads/
 backend/media/chat_files/
 backend/media/transfer_station/
 backend/staticfiles/
+backend/var/
 !backend/media/**/.gitkeep
 
 # Frontend

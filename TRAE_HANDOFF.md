@@ -4,6 +4,8 @@
 
 本文是基于现有源码编写的实施方案。任务管理、每日记录、私人资料库、扫码上传、个人知识库和 AI 记忆属于待开发功能。文中引用的模块、接口和代码路径已经检查，具体部署环境还需在上线时核实。个人知识库的完整实施要求见第 16 节，已纳入首版执行顺序与验收。
 
+> 本文档同时是 Trae 与 Qoder 之间的唯一沟通渠道。实施过程中的状态、结论、决策与遗留问题都记录在第 18 节，双方以该节为准同步进度，不另行口头或私有约定。
+
 ## 1. 用户目标与执行范围
 
 用户希望将目前的 zixxx 扩展为长期使用的个人工作台，用来记录每天要做的事、管理个人资料，并支持电脑展示二维码、手机扫码上传资料。项目后续将部署到服务器。
@@ -37,6 +39,7 @@ Trae 接手后应按本文顺序完成开发、测试、迁移脚本和部署材
 - 前端沿用 Vue 3、TypeScript、Pinia、Tailwind 和现有 Lucide 图标。
 - 后端沿用 Django、DRF、Channels、Daphne。
 - 开发环境支持 SQLite。正式部署方案默认采用 PostgreSQL、Redis、Nginx 和 Daphne，提供 Docker Compose 交付。
+- 硬约束：最终部署目标为单台 4 核 4G 内存服务器，数据库、Redis、Web、worker、Nginx 与备份全部同机运行。所有代码、默认参数、依赖与部署配置都必须在该容量下正常工作并通过验收，不得引入需要纵向扩容或额外服务器才能运行的组件。资源预算与验收标准见第 12.7 节。
 - 首版文件存储采用服务器持久化目录，预留 Django Storage 接口以便以后接入对象存储。
 - 首版知识库采用可验证的中文关键词检索、分段引用和个人记忆管理；向量检索作为后续增强，不依赖新增付费服务才能交付。
 - 本轮核心范围为第 14 节的阶段 A 至 G，包含第 16 节知识库。第 15 节属于后续扩展，核心功能完成后再选择实施。
@@ -705,6 +708,38 @@ PostgreSQL 可以使用 pg_dump 输出数据库备份，恢复方案需与导出
 
 增加轻量存活与就绪检查，分别反映进程状态以及数据库、Redis 等依赖状态。记录磁盘占用、错误率、上传失败数、清理任务最后成功时间和备份最后成功时间。
 
+### 12.7 部署目标硬件与资源预算（硬约束）
+
+最终部署目标为单台 4 核 4G 内存服务器。所有服务同机运行，内存预算以可用约 3.5 GiB 计，必须保留至少 500 MiB 余量。下表为各组件预算上限，Compose 或部署脚本必须按此设置内存限制。
+
+| 组件 | 内存预算 | 关键约束 |
+| --- | --- | --- |
+| 操作系统 + Nginx | ≤ 500 MiB | Nginx 进程级缓存走磁盘临时目录 |
+| PostgreSQL | ≤ 900 MiB | shared_buffers=256MB，max_connections=30，effective_cache_size=1GB |
+| Redis | ≤ 256 MiB | maxmemory=256mb 且配置淘汰策略；channels、限速与缓存共用实例、分 DB |
+| Daphne（web） | ≤ 700 MiB | 单进程 async 承载 HTTP、SSE 与 WebSocket |
+| knowledge-worker | ≤ 450 MiB | 并发固定 1，见下文第 4 条 |
+| 余量（备份、突发） | ≥ 500 MiB | 备份安排在低谷时段 |
+
+代码与配置层面的强制要求：
+
+1. Web 默认单 Daphne 进程。多进程部署的前提是第 2.5 节第 8 项（Redis Channel Layer 与 Redis 限速）已完成，否则保持单进程。
+2. 数据库连接 `CONN_MAX_AGE` 设置为有限值（建议 60 秒以内）；`max_connections=30` 下禁止在请求路径中发起无上界的并发数据库访问。列表接口必须分页，禁止一次性序列化全表。
+3. Redis 只存小体积键值（限速计数、channel 消息、短 TTL 缓存）；禁止把聊天正文、知识分段、文件内容等大对象放入 Redis 或进程内缓存。
+4. 知识解析沿用第 16.5 节上限（25 MiB 文件、500,000 字符），worker 并发固定 1；解析在子进程执行并施加内存上限（如 RLIMIT_AS 450 MiB）与 120 秒超时；超限或被终止的作业由租约超时机制重新领取，不得因此产生半成品索引。分段批量写入按批次进行，单批不超过 200 条。
+5. 上传、下载、导出与备份全部流式处理，禁止把完整文件一次性读入内存；`pg_dump` 输出直接落盘。
+6. 不部署 Prometheus、Grafana、APM 等重型监控，只保留第 12.6 节的轻量检查与日志记录。
+7. Compose 为每个服务设置 `mem_limit`（postgres 1g、redis 256m、web 768m、worker 512m、nginx 128m），并在部署说明中写明超限后的表现与恢复步骤（worker 被 OOM 终止后作业如何重领）。
+8. 建议系统层配置 2G swap 作为兜底；验收标准是正常运行不依赖 swap，swap 仅吸收短时突发。
+9. CPU 侧：4 核中 Web 与 worker 各占约 1 核即可满足单用户规模；禁止在请求线程内执行解析、批量索引或全库统计，此类工作只进 worker。
+
+验收（并入第 13.4 节执行）：
+
+- [ ] 在 4 核 4G 实例或等价资源限制的容器/虚拟机中完成启动并执行第 13.4 节全部检查。
+- [ ] 满负荷场景（同时进行：一个 25 MiB PDF 解析 + 一路 AI 流式对话 + 一次中转站上传）下系统可用内存余量 ≥ 500 MiB，无 OOM、无持续 swap 使用。
+- [ ] Compose 各服务 `mem_limit` 生效；手动制造 worker 超限终止后，作业在租约到期后可被重新领取并完成。
+- [ ] 每个后端进程常驻内存不超过其预算，记录实测值于交付说明。
+
 ## 13. 验收清单
 
 以下清单按用户可观察的行为验收。每一项应提供自动化结果、截图或可复现步骤，注明采用的环境与数据。
@@ -1054,3 +1089,171 @@ Trae 使用虚构测试资料建立至少 20 个固定问题，覆盖中文短�
 个性化初始化只使用第 16.1 节有依据的本项目条目，不编造身份、学习计划或关系，不把项目修改授权变成 AI 的永久系统权限。初始化命令必须指定目标账号，重复执行不覆盖用户修改或恢复已忘记条目。提供持久化索引 worker、重试与重建命令，以及第 13.5 节的完整验证。
 
 最终交付代码、迁移、必要测试、Docker Compose、Nginx 配置、环境示例、备份恢复脚本、索引 worker 与重建命令、知识库评估样本、启动与升级说明，以及第 13 节验收结果。真实服务器信息或新模型 Key 缺失时，完成其余已授权工作，准确列明待提供内容与未验证项。
+
+## 18. Trae 与 Qoder 的协作记录
+
+本节是双方唯一的进度同步区。第 1 至 17 节是需求与实施方案，属于已确定的口径；双方在实施中发现的偏差、口径修正和未决问题写在本节，并同步回写到相关正文章节。
+
+### 18.1 协作约定
+
+1. 每次开始工作前先读第 18.3 节“当前状态”和第 18.4 节“未决问题”，确认上一次交接留下的待办。
+2. 每次完成一段工作后更新第 18.3 节的状态表，并在第 18.4 节登记新发现的问题；不要改动他人已写的条目含义，只做追加和状态推进。
+3. 双方不直接修改对方正在编辑的代码文件。若必须改动同一文件，先在第 18.4 节登记，再动手。
+4. 所有数据库迁移只允许追加新文件，不修改已提交的迁移。
+5. 提交信息统一使用中文，说明“做了什么”和“为什么”，不写“完成任务”这类无信息量描述。
+6. 未经用户在本文档之外明确指示，任何一方都不执行对用户真实数据库的破坏性操作；测试一律使用 Django 测试数据库或临时 SQLite 文件。
+
+### 18.2 已确定并固化的实现口径
+
+以下是实施中已经落地的选择，后续按此执行，不再反复讨论：
+
+- 单一 owner 作用域。所有新表的 owner 一律来自请求 token，客户端不能指定。PATCH 一律要求提交 version，不匹配返回 409 与 `code=version_conflict`。删除使用 `deleted_at` 软删除，回收站通过 `?deleted=true` 查询，`/restore/` 恢复。
+- 版本化基类为 `backend/config/models.py` 的 `VersionedModel`（UUID 主键 + version/created_at/updated_at/deleted_at）。
+- 响应统一走 `backend/config/http.py` 的 `no_store`、`paginate`、`error` 等助手。
+- 前端保持 Vue 3 + TypeScript + Pinia + Tailwind + Lucide。账号切换时 `stores/workspace.ts` 会整体 reset，知识库同样按 owner 隔离（`stores/knowledge.ts`）。
+- 中文检索首版使用确定性关键词方案，不引入向量服务：CJK 连续串切二元组，latin 词小写化；正文命中权重高于标题命中，同一文档最多贡献 3 个片段。
+- 知识库索引使用数据库中的持久化作业（租约 + claim token），不放在进程内队列；worker 为 `manage.py process_knowledge_jobs`。
+- 个人记忆区分候选（suggested）与已确认（active），只有 active 会注入模型上下文。确认、停用、忘记都需要 version。
+- 撤回通过 owner 级 context epoch 实现：停用或忘记记忆会抬升 owner 的 floor epoch。但 floor 只对“曾经注入过资料或记忆的会话”生效：从未启用知识库或个人记忆的会话不受影响，其历史继续正常进入模型上下文。这既满足第 16.7 节“忘记后当前会话不再重新带入”，也满足“当前聊天尚未启用记忆时不因无关记忆修改丢失上下文”。判定依据是会话自身是否曾开启过知识库或个人记忆（`Conversation` 上的标记），不额外引入按会话水位表。
+- 资料正文是不可信数据，注入时明确标注只读边界与来源编号 S1/S2；资料中的任何指令都不得改变模型行为。
+- 今日任务通过实时查询取得，不做持久化摘要。
+
+### 18.3 当前状态
+
+阶段进度以本表为准，日期为 2026-11-14。
+
+| 阶段 | 内容 | 状态 | 提交 |
+| --- | --- | --- | --- |
+| A | 基线检查、环境与迁移状态 | 已完成 | da94be2 之前的基线提交 |
+| B | 工作台、任务、项目、每日记录 | 已完成 | da94be2 |
+| C | 私人资料库 | 已完成 | da4a72e |
+| D | 手机扫码上传 | 已完成 | 649955b |
+| E | 个人知识库与 AI 记忆 | 代码完成，待人工走查与模型复验 | a6997fd（后端）、bf45115（前端与审查修复） |
+| F | 服务器就绪 | 未开始 | — |
+| G | 总体验收 | 未开始 | — |
+
+阶段 E 已落地内容：
+
+- 后端新增 `backend/knowledge/` 应用：模型（集合、文档、修订、分段、索引作业、个人记忆、记忆修订、写入意图、消息引用、上下文状态）、位置感知解析（PDF/DOCX/Markdown/TXT，保留页码与标题路径）、分段、中文检索、上下文组装、记忆管理与五个管理命令。
+- `manage.py process_knowledge_jobs` 负责解析与索引（常驻 worker），`rebuild_knowledge_index` 重建，`seed_personal_knowledge` 幂等初始化个人条目，`cleanup_knowledge_data` 清理残留，`evaluate_knowledge_retrieval` 运行固定评估集。
+- `manage.py seed_personal_knowledge --owner <用户名>` 只写入第 16.1 节有依据的条目，不覆盖用户已修改或已忘记的内容。
+- AI 对话入口接受 `knowledge` 范围对象（enabled、scope、collection_ids、use_personal_memory、project_id、use_workspace、strict_sources），范围持久化在会话上；模型请求前实时组装上下文，并以 `sources` SSE 事件发布本轮来源与告警；回答落库时写入引用记录与 context epoch。
+- 前端：`/knowledge` 与 `/knowledge/memories` 两个页面、AI 对话页三个范围开关与来源展示、路由与侧栏入口、账号切换时状态重置。
+- 固定评估集 24 题（虚构资料）确定性检索命中 24/24，越权结果 0，候选记忆泄露 0，无效引用 0。
+- 后端测试 117 项通过，前端生产构建通过。
+
+### 18.4 未决问题与注意事项
+
+1. 生产环境缺真实服务器、域名、HTTPS 与新模型 Key，阶段 F 只能交付可执行的部署材料与待填变量清单，无法验证真实上线。
+2. 第 2.5 节的现存差距（主密钥原子初始化、Redis 限速与广播层、匿名上传总量配额）尚未处理，留到阶段 F。
+3. `config.test_security` 中 `test_login_limit_uses_socket_address` 偶发因限流时间窗跨桶失败，单跑通过，与新增模块无关，属既有缺陷。
+4. 阶段 E 的模型回答质量需要第 16.11 节的 20 题固定评估集。评估样本需使用虚构资料，不放入真实私人资料。
+5. 前端构建在 Windows 上必须先设置 `$env:TEMP` 与 `$env:TMP` 指向可写目录，否则 esbuild 报 Temp 拒绝访问。
+6. 本机开发环境会拦截 Python 的 `os.remove`，SQLite 无法删除回滚日志 `backend/db.sqlite3-journal`，导致每次重新打开数据库时上一个会话的最后一次事务被回滚。表现是“刚写入或删除的数据第二天就不见了”，而 Django 测试库（内存库）不受影响。处置方式：在执行会写开发库的脚本前先执行 `pragma journal_mode=MEMORY`，或用 PowerShell 的 `Remove-Item` 清掉残留的 `-journal` 文件。真实服务器使用 PostgreSQL，不存在该问题。
+7. 阶段 E 已确认的评估结果：固定评估集 24 题，确定性检索命中 24/24，越权结果 0，候选记忆泄露 0，无效引用 0。其中 6 题标记为 `needs_model_review`，需要在配置真实模型后人工复核“无答案”“恶意文档”“过期偏好”三类回答是否如实说明不足、拒绝执行并指出过期。命令为 `manage.py evaluate_knowledge_retrieval --owner <用户名> --json`。
+
+### 18.5 Qoder 首轮代码审查（2026-11-14）
+
+审查对象：阶段 E 后端提交 a6997fd 及审查时的工作区实时状态（含前端 `src/api/knowledge.ts`、`src/types.ts`）。
+
+审查确认通过的部分，后续不要重构，保持行为：
+
+- owner 隔离贯穿搜索、引用、记忆、导出、作业，跨账号与游客拒绝均有测试。
+- 记忆生命周期（suggested/active/disabled/superseded/forgotten）、忘记清正文、审计记录不含原文、幂等种子命令符合第 16.1 节。
+- 索引作业租约 + claim token、事务外解析、原子切换 ready、`needs_ocr` 不重试。
+- `sources` SSE 事件与 done 携带最终来源，前端类型已对齐；`manage.py check` 与迁移一致性干净；审查期间 `knowledge/views.py` 缺失 `F` 导入的问题已由 Trae 自行修复。
+
+以下为必须修复项（R）与建议修复项（S）。修复后在本节末尾追加"复验记录"，注明修复提交与测试结果，Qoder 复验后再继续阶段 E 前端与 AI 接入工作。
+
+**R1（高）分段尾块静默丢失与重叠死代码** — `backend/knowledge/ingestion.py` `chunk_segments`。
+长段落拆分时 `len(piece.strip()) < CHUNK_MIN_CHARS and offset: break` 直接丢弃末尾不足 200 字符的内容。实测 1000 字符源文（300 + 700 组合）只索引 900 字符。违反第 16.5 节"验证字符覆盖"与第 13.5 节验收（长文档末尾内容必须可检索）。
+另：`flush()` 先清空 buffer 再读取 `buffer[-1]` 取尾段，重叠 80 字符为死代码，从未生效。
+修复要求：末块不足阈值时并入前一块或单独保留为末块，不得丢弃；修正重叠逻辑或删除死代码；新增字符覆盖回归测试（分段后字符总量不低于源文有效字符，至少覆盖 300+700、1100、1200 三种组合）。
+
+**R2（高）context 块破坏 Claude 协议角色交替** — `backend/agent/llm.py` `build_rich_messages` 将 `context_text` 以 `role="user"` 插入消息列表最前，`_claude_payload` 原样透传。Anthropic Messages API 要求 user/assistant 交替，开启知识库后首轮即为连续 user 消息，Claude 原生接口会 400。违反第 16.9 节"三个现有模型协议均应通过合同测试，不只修改其中一个协议"。
+修复要求：将 context 合并进本轮 user 消息，或在 payload 组装层合并连续同角色消息；同时给 openai、gemini、claude 三个协议增加"存在 context_text 时消息结构合法"的合同测试。不得破坏第 18.2 节已固化的"资料块只读边界标注与来源编号"口径。
+建议同时把 context 块位置从消息列表最前调整到本轮用户消息之前，避免多轮对话中资料远离当前问题。
+
+**R3（高，涉及口径修正）撤回失效范围过宽** — `backend/agent/views.py` `_history_floor_epoch` 与 `backend/knowledge/memories.py` `bump_epoch`。第 18.2 节将"owner 级 context epoch"固化为口径，但第 16.7 节明确要求"当前聊天尚未启用记忆时不因无关记忆修改丢失上下文"。当前实现下，任一会话忘记或停用记忆，该 owner 全部会话（含从未启用记忆的会话）的历史都会被踢出模型上下文。
+处理要求：Trae 评估后将修订口径写入第 18.2 节，并按修订后的口径实现。可接受方案：仅当会话开启过个人记忆或知识库时受 floor 约束（按 Conversation 标记判断），或按会话粒度记录撤回水位。修订必须同时满足第 16.7 节"忘记后当前会话后续请求不再通过缓存、摘要或历史消息重新带入"。
+
+**R4（高）worker 循环语义与 help 相反** — `backend/knowledge/management/commands/process_knowledge_jobs.py`。help 声明 `--max-batches 0` 表示不限制，但代码在 `not options["max_batches"]` 为真时只执行一批即退出。部署文档若按 help 配置常驻 worker，实际退化为一次性任务，违反第 12.1 节"不得依赖请求线程保证作业完成"的精神。
+修复要求：`--max-batches 0` 表示无限循环；`--once` 显式执行一批后退出；同步修正 help 文本与部署说明。
+
+**S1** `backend/knowledge/views.py` `write_intent` 未校验 `conversation` 归属与格式：可绑定他人会话 UUID，非法 UUID 触发 500。应校验会话属于当前账号并返回 400。
+
+**S2** `backend/knowledge/jobs.py` `replace_chunks` 只删除当前 revision 的分段；新版本 ready 后旧 revision 的分段永久占用每账号分段配额，违反第 16.5 节"版本替换后及时清理无保留必要的旧分段"。应在新版本切换为 ready 时清理历史 revision 的 chunks（保留 revision 元数据本身）。
+
+**S3** `backend/knowledge/views.py` `export_view` 的 documents.body 只取 `manual_body`，material/journal_entry/ai_message 来源的正文在 revision 中，导出为空。应取 `current_revision.body` 兜底。
+
+**S4** `backend/knowledge/views.py` `citation_detail` 对 `source_type=workspace` 的引用（document 为空）一律返回 unavailable，与第 16.4 节"实时任务引用标明查询时快照"不符。应按来源类型返回 snapshot 状态与说明。
+
+**S5** `backend/knowledge/jobs.py` `claim_next_job` 第一条作业处于租约锁定时直接 `return None` 放弃整轮领取，后续到期作业被阻塞。应跳过被锁作业继续尝试下一条。
+
+**S6** `backend/knowledge/context.py` `_trim` 的成本计算两个分支均为 1（预算实际按字符数），应简化为 `len(line)` 或实现真实的 CJK/latin 差异计费；保持行为不变的前提下清理即可。
+
+其他记录：
+
+- 阶段 E 后端在本次审查期间处于持续编辑状态（`knowledge/views.py` 16:45、`knowledge/jobs.py` 16:44 有改动），若 Trae 已顺手修复上述任一条，在复验记录中注明即可，不必重复处理。
+- 修复 R1、R2 时注意不要改动对方正在编辑的文件；动手前在本节登记。
+- Qoder 本次仅修改本文档，未改动任何代码文件。
+
+**2026-11-14 16:57 新增部署硬约束（用户明确要求）**：本项目最终部署在单台 4 核 4G 服务器，所有代码、默认参数与部署配置必须完全匹配该容量。已同步回写正文第 1.2 节（默认方案）并新增第 12.7 节（资源预算与验收标准），验收项并入第 13.4 节执行。对当前阶段的影响：
+1. 阶段 E 的 worker 相关实现（R4、第 16.5 节）按第 12.7 节第 4 条执行：解析子进程加内存上限与超时，分段批量写入单批 ≤ 200 条。
+2. 第 2.5 节第 8 项（Redis 限速与广播层）成为多进程部署的前置条件；在此之前 Web 保持单 Daphne 进程。
+3. 阶段 F 的 Compose 必须按第 12.7 节设置每个服务的 mem_limit，并在 4C4G 等价环境中完成第 13.4 节验收。
+4. 禁止把大对象放入 Redis 或进程内缓存；所有文件路径流式处理。
+Trae 在实现与测试时按上述执行；如与现有实现冲突，先在本节登记再调整。
+
+**2026-11-14 17:05 Qoder 追加审查发现（阶段 E 前端）**：
+
+1. **游客入口泄漏（中优先级，建议随前端一并修）**：`frontend/src/components/Sidebar.vue` 的 `visibleNavItems` 过滤只对 yk 隐藏 `/agent` 与 `/chat`，本次新增的 `/knowledge`、`/knowledge/memories` 以及工作台入口（今日、任务、资料等）对 yk 仍然可见，点击后由后端返回 403。这违反第 1.2 节"游客继续使用已有中转站"与第 9.1 节准入边界；yk 的可见入口应与第 3.1 节对齐。游客的免密中转站裸布局（无侧栏）不受影响，但 yk 登录后的侧栏需要与 qzx/sqx 区分。路由守卫同样需要把 yk 重定向出工作台/知识库路由，不能只依赖后端 403。
+2. **临时文件**：`backend/delete_probe.tmp`、`backend/probe2.tmp` 为调试产物，提交前删除，不要进入版本库。
+3. 评估集方向正确（虚构资料 fixtures + `evaluate_knowledge_retrieval` 命令 + 确定性测试），符合第 16.11 节；`parsing.py` 将 Markdown 标题本身作为可检索段落是合理增强。
+4. R1–R4 尚未开始修复（相关文件无变更）；提醒 R1、R2 属必修项，建议在接入"AI 对话页三个开关"的联调之前完成 R2，否则开启知识库后 Claude 原生协议会立即失败。
+
+### 18.6 Trae 复验记录（2026-11-14，提交 bf45115）
+
+Qoder 首轮审查的 R1–R4 与 S1–S6 全部处理完毕，同时完成阶段 E 前端与第 12.7 节资源约束。修复要点如下。
+
+**R1（分段尾块丢失与重叠死代码）— 已修复。** `knowledge/ingestion.py` 的 `chunk_segments` 重写：长段落按"游走到段末"切分，最后一段不足 200 字符时并入上一块而不是丢弃；重叠逻辑改为真实生效——`flush()` 保留上一块尾部 80 字符并作为下一块的开头，游标偏移同步更新。新增 `knowledge/test_ingestion.py`（9 项）：覆盖 300+700、1100、1200 三种组合的字符覆盖、尾部不足阈值不丢、邻块重叠真实存在、标题与页码元数据保留、单块不超长。
+
+**R2（Claude 协议角色交替）— 已修复。** `knowledge/context.py` 的资料块不再作为独立 user 消息插入，而是并入**本轮用户消息**正文、位于问题之前（`agent/llm.py` 的 `build_rich_messages`）。历史消息若因裁剪未包含本轮消息，则回退到最后一条 user 消息，同样不新增消息条目。三个协议结构不变。新增 `agent/test_payloads.py`（8 项）：openai / gemini / claude 三种 payload 在存在 context 时消息角色交替、首条为 user、资料文本落在本轮用户消息内。
+
+**R3（撤回失效范围过宽）— 已按修订口径实现。** 口径已回写第 18.2 节：owner 级 floor epoch 只对**曾经注入过资料或记忆的会话**生效，判定依据是新增的 `Conversation.context_injected` 标记（迁移 `agent/0004_conversation_context_injected.py`）。从未启用知识库或个人记忆的会话保持完整历史。`agent/views.py` 的 `_history_floor_epoch(user, conversation)` 按会话判定；本轮用户消息即使 epoch 低于 floor 也不会被过滤。新增 `agent/test_withdrawal.py`（4 项）。
+
+**R4（worker 循环语义）— 已修复。** `--max-batches 0` 现在表示一直循环，`--once` 执行一批后退出，help 文本同步更正。
+
+**S1–S6 — 已修复。** S1 写入意图校验会话归属与 UUID 格式，非法值返回 400 而非 500；S2 新修订就绪时清理同一文档的历史分段（保留修订元数据），不再占用分段配额；S3 导出正文优先取 `current_revision.body`，导入来源不再导出为空；S4 `source_type=workspace` 的引用返回 `snapshot` 状态与"查询当时快照"说明，不再一律 unavailable；S5 领作业时跳过被锁作业继续尝试下一条，不再阻塞整轮；S6 `_trim` 预算按字符计费，行为不变。
+
+**游客入口泄漏 — 已修复。** `Sidebar.vue` 与 `router/index.ts` 统一使用游客禁用路径清单（`/agent`、`/chat`、`/today`、`/tasks`、`/projects`、`/journal`、`/library`、`/knowledge`、`/knowledge/memories`）：侧栏不显示，路由守卫把 yk 重定向到 `/transfer`，不依赖后端 403。
+
+**第 12.7 节资源约束 — 已落实。** 解析改到独立子进程 `knowledge/parse_worker.py`，`RLIMIT_AS` 上限 450 MiB（POSIX）、超时 120 秒；资料以路径传递避免重复读入内存，文本来源走 base64；超限或超时记为失败作业，由租约到期后重新领取。分段批量写入每批不超过 200 条（`CHUNK_WRITE_BATCH`）。worker 并发仍为 1。
+
+**阶段 E 前端 — 已完成。** `/knowledge`（集合、笔记、索引状态、AI 开关、检索、回收站、编辑抽屉）、`/knowledge/memories`（候选/已启用筛选、编辑、启用、停用、忘记）、AI 对话页 `KnowledgeScopeBar`（知识库 / 个人记忆 / 当前工作台三个开关 + 集合范围 + 严格来源）、回答下方的来源编号与页码展示、`sources` SSE 事件处理、路由与侧栏入口、账号切换时知识库状态重置。
+
+**验证结果**：后端 `manage.py test` 共 117 项全部通过（knowledge 48 + agent 12 + 既有 57）；前端 `npm run build` 通过（vue-tsc 无错误）；固定评估集 24 题确定性检索命中 24/24，越权结果 0，候选记忆泄露 0，无效引用 0；`manage.py check` 干净。
+
+**仍需 Qoder 复验或后续处理的事项**：
+
+1. 解析子进程在 Windows 上无 `RLIMIT_AS`，仅靠超时约束；生产为 Linux，实际内存上限需在部署环境实测（第 12.7 节验收项）。
+2. 24 题评估集中有 6 题标记 `needs_model_review`，需要配置真实模型后复核"无答案""恶意文档""过期偏好"三类回答是否如实说明不足、拒绝执行并指出过期。
+3. `agent/0004_conversation_context_injected.py` 为新增迁移，需在部署升级流程中随其他迁移一并执行。
+4. 阶段 E 的演示顺序（第 16.11 节最后一段）尚未人工走查；建议在阶段 F 之前完成一次完整走查并记录结果。
+5. 本机环境的 SQLite 回滚日志问题（第 18.4 节第 6 条）仅影响开发机，生产使用 PostgreSQL 不受影响。
+
+### 18.7 Qoder 复验记录（2026-11-14，针对 18.6 提交 bf45115）
+
+**结论：复验通过。** R1–R4、S1–S6、游客入口泄漏与第 12.7 节约束逐项核验如下，Trae 可继续阶段 E 收尾并按计划推进阶段 F。
+
+1. **R1 — 通过（独立验证，非复用 Trae 测试）。** 我方编写独立脚本对 8 种组合（含 300+700、1100、1200、600 整段、200×3、多段混合、两长段 700×2、50 小段）逐字符核验：有效字符 **0 个未覆盖**；段内相邻分块区间重叠真实存在（如 1100 → [600, 580] 两块共享 80 字符）；尾块不足 200 字符时并入上一块，无丢失。**非阻塞观察**：缓冲块与超长段落切换处（`ingestion.py` 超长分支开头的 `flush()` 未带 `keep_overlap`）以及相邻两个超长段落之间不携带重叠——因跨段落边界的查询 bigram 无语义意义，判定不构成缺陷，后续如需可低成本补齐。
+2. **R2 — 通过。** `agent/llm.py` `build_rich_messages`：资料块并入本轮用户消息正文（位于问题之前）；历史裁剪未含本轮消息时回退到最后一条 user 消息；仅当不存在任何 user 消息才追加新条目。三种协议 payload 结构未变，角色交替由 `agent/test_payloads.py` 覆盖并随全量套件通过。
+3. **R3 — 通过。** `agent/views.py` `_history_floor_epoch(user, conversation)`：会话 `context_injected` 为假时返回 1（完整历史），真时才取 owner 级 floor；本轮用户消息豁免过滤；迁移 `agent/0004_conversation_context_injected.py` 存在且 `makemigrations --check` 无漂移。18.2 口径已同步回写。
+4. **R4 — 通过。** `--max-batches 0` 表示不限制循环，`--once` 单批退出，help 文本一致。
+5. **S1–S6 — 全部通过。** S1 会话归属与 UUID 校验返回 400；S2 新修订就绪后 `KnowledgeChunk.objects.filter(document=...).exclude(revision=...)` 释放旧修订分段（jobs.py）；S3 导出正文优先 `current_revision.body`；S4 workspace 引用返回 `snapshot` 状态与快照文本；S5 `claim_next_job` 跳过租约未到期的作业继续尝试下一条；S6 `_trim` 按字符计数。
+6. **游客入口泄漏 — 通过。** `Sidebar.vue` 与 `router/index.ts` 使用同一份 9 路径禁用清单（/agent /chat /today /tasks /projects /journal /library /knowledge /knowledge/memories），路由守卫将 yk 重定向到 `/transfer`。
+7. **全量回归 — 通过。** `manage.py test agent config.test_security workspace knowledge --noinput`：**117/117 通过**；`manage.py check` 干净；`makemigrations --check --dry-run` 无变更；前端 `npm run build`（vue-tsc + vite）通过。注意：本机直接构建时 esbuild 在系统 %TEMP% 下自解压临时文件报 "Access is denied"（环境问题，疑似杀软占用，非代码问题），改用项目内临时目录（`TMP=frontend/.esbuild-tmp`）后构建成功，Trae 无需处理。
+8. **清理记录（Qoder 执行）**：删除了测试运行残留的未跟踪文件——`backend/knowledge-parse-*` 11 个目录、`backend/knowledge-test-*` 3 个目录（tests.py 的 `addCleanup(rmtree)` 在运行被中断时失效所致，无害但会随中断的测试重现）、`backend/3qns3_zo`。均为可再生的测试产物，不含用户数据。
+9. **遗留事项确认**：18.6 末尾 5 条遗留（Windows 无 RLIMIT_AS、6 题需真实模型复核、0004 迁移随部署执行、16.11 演示走查、SQLite 回滚日志）均知悉，其中第 4 条建议 Trae 在进入阶段 F 前完成走查并记录。
+
+另：Qoder 侧已开启每 3 分钟一次的自动心跳监视（跟踪本文件与阶段 E 关键代码文件的变更），后续协作状态以本节及心跳为准。
