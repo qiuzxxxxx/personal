@@ -1,9 +1,6 @@
 """Regression tests for phone (QR) upload sessions."""
 from __future__ import annotations
 
-import shutil
-import tempfile
-
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -11,6 +8,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from accounts.models import AccountSecurity
+from config.testing import remove_scratch, scratch_dir
 from workspace.models import Material, Task, TaskMaterial, UploadReceipt, UploadSession
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 128
@@ -18,13 +16,13 @@ PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 128
 
 class UploadSessionTestCase(APITestCase):
     def setUp(self):
-        self.tempdir = tempfile.mkdtemp(prefix="workspace-upload-test-")
+        self.tempdir = scratch_dir("workspace-upload-test-")
         self.override = override_settings(
             MEDIA_ROOT=self.tempdir, PUBLIC_BASE_URL="https://workbench.example.com"
         )
         self.override.enable()
         self.addCleanup(self.override.disable)
-        self.addCleanup(shutil.rmtree, self.tempdir, True)
+        self.addCleanup(remove_scratch, self.tempdir)
 
         self.owner = User.objects.create_user(username="owner", password="pw-owner-123456")
         self.other = User.objects.create_user(username="other", password="pw-other-123456")

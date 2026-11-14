@@ -1,15 +1,13 @@
 """Regression tests for the private material library."""
 from __future__ import annotations
 
-import shutil
-import tempfile
-
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
+from config.testing import remove_scratch, scratch_dir
 from workspace.models import Folder, Material, Task, TaskMaterial
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
@@ -18,11 +16,11 @@ PDF_BYTES = b"%PDF-1.7\n" + b"\x00" * 64
 
 class LibraryTestCase(APITestCase):
     def setUp(self):
-        self.tempdir = tempfile.mkdtemp(prefix="workspace-library-test-")
+        self.tempdir = scratch_dir("workspace-library-test-")
         self.override = override_settings(MEDIA_ROOT=self.tempdir)
         self.override.enable()
         self.addCleanup(self.override.disable)
-        self.addCleanup(shutil.rmtree, self.tempdir, True)
+        self.addCleanup(remove_scratch, self.tempdir)
 
         self.owner = User.objects.create_user(username="owner", password="pw-owner-123456")
         self.other = User.objects.create_user(username="other", password="pw-other-123456")

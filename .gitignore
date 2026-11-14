@@ -16,6 +16,10 @@ backend/staticfiles/
 backend/var/
 !backend/media/**/.gitkeep
 
+# Test scratch directories (the platform temp dir may fall back to the repo)
+backend/*-test-*/
+backend/[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]
+
 # Frontend
 frontend/node_modules/
 frontend/dist/

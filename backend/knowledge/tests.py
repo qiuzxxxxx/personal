@@ -1,9 +1,6 @@
 """Tests for the personal knowledge base and the personal memory."""
 from __future__ import annotations
 
-import shutil
-import tempfile
-
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -11,6 +8,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from agent.models import Conversation, Message
+from config.testing import remove_scratch, scratch_dir
 from knowledge.jobs import process_pending
 from knowledge.memories import current_floor_epoch
 from knowledge.models import (
@@ -29,11 +27,11 @@ TXT_BYTES = "工作台笔记\n今天需要复核资料库的索引状态。".enc
 
 class KnowledgeTestCase(APITestCase):
     def setUp(self):
-        self.tempdir = tempfile.mkdtemp(prefix="knowledge-test-")
+        self.tempdir = scratch_dir("knowledge-test-")
         self.override = override_settings(MEDIA_ROOT=self.tempdir)
         self.override.enable()
         self.addCleanup(self.override.disable)
-        self.addCleanup(shutil.rmtree, self.tempdir, True)
+        self.addCleanup(remove_scratch, self.tempdir)
 
         self.owner = User.objects.create_user(username="owner", password="pw-owner-123456")
         self.other = User.objects.create_user(username="other", password="pw-other-123456")
