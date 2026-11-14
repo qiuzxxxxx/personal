@@ -45,3 +45,7 @@ Thumbs.db
 .env
 .env.local
 backend/.master.key
+
+# Deployment runtime data
+backups/
+deploy/certbot-webroot/

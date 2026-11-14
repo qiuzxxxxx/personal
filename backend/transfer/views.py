@@ -3,6 +3,8 @@ from __future__ import annotations
 import mimetypes
 from pathlib import Path
 
+from django.conf import settings
+from django.core.cache import cache
 from django.db.models import Q
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
@@ -34,6 +36,62 @@ BLOCKED_EXTENSIONS = {
     ".js",
     ".jar",
 }
+
+
+def anonymous_upload_budget() -> int:
+    """Total number of bytes anonymous uploads may occupy."""
+    return int(getattr(settings, "TRANSFER_ANONYMOUS_TOTAL_BYTES", 0))
+
+
+def anonymous_upload_window() -> int:
+    """Seconds in which the anonymous total budget is measured."""
+    return int(getattr(settings, "TRANSFER_ANONYMOUS_WINDOW_SECONDS", 3600))
+
+
+def anonymous_upload_rate_limit() -> int:
+    """Maximum number of anonymous uploads per hour."""
+    return int(getattr(settings, "TRANSFER_ANONYMOUS_MAX_FILES_PER_WINDOW", 0))
+
+
+def check_anonymous_budget(request) -> Response | None:
+    """Reject anonymous uploads that would exceed the public budget.
+
+    The public transfer station accepts files without an account, so it
+    needs a total budget and a request rate limit: otherwise anonymous
+    uploads can fill the disk.
+    """
+    total_budget = anonymous_upload_budget()
+    file_budget = anonymous_upload_rate_limit()
+    if not total_budget and not file_budget:
+        return None
+    window = anonymous_upload_window()
+    key = f"transfer:anon:{request.META.get('REMOTE_ADDR', 'unknown')}"
+    used = cache.get(key) or {"bytes": 0, "files": 0}
+    if used.get("bytes", 0) >= total_budget and total_budget:
+        return Response(
+            {"detail": "免密上传总量已达上限，请稍后再试。"},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+    if used.get("files", 0) >= file_budget and file_budget:
+        return Response(
+            {"detail": "免密上传次数已达上限，请稍后再试。"},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+    return None
+
+
+def record_anonymous_upload(request, size: int) -> None:
+    """Count an anonymous upload against the public budget."""
+    total_budget = anonymous_upload_budget()
+    file_budget = anonymous_upload_rate_limit()
+    if not total_budget and not file_budget:
+        return
+    window = anonymous_upload_window()
+    key = f"transfer:anon:{request.META.get('REMOTE_ADDR', 'unknown')}"
+    used = cache.get(key) or {"bytes": 0, "files": 0}
+    used["bytes"] = used.get("bytes", 0) + size
+    used["files"] = used.get("files", 0) + 1
+    cache.set(key, used, timeout=window)
 
 
 def parse_bool(value, default: bool = True) -> bool:
@@ -89,6 +147,14 @@ def files(request):
     if upload.size > MAX_TRANSFER_BYTES:
         return Response({"detail": "文件超过 500 MB 限制。"}, status=413)
 
+    owner = request.user if request.user.is_authenticated else None
+    if owner is None:
+        # Anonymous uploads share a public budget so that they cannot fill
+        # the disk of the server.
+        budget_error = check_anonymous_budget(request)
+        if budget_error is not None:
+            return budget_error
+
     original_name = safe_original_name(upload.name or "未命名文件")
     suffix = Path(original_name).suffix.lower()
     if suffix in BLOCKED_EXTENSIONS:
@@ -99,7 +165,6 @@ def files(request):
 
     remark = str(request.data.get("remark") or "").strip()[:255]
     is_public = parse_bool(request.data.get("is_public"), default=True)
-    owner = request.user if request.user.is_authenticated else None
     if owner is not None:
         # Logged-in uploads are always attributed to the real account.
         uploader = owner.username
@@ -122,6 +187,8 @@ def files(request):
     )
     record.file.save(original_name, upload, save=False)
     record.save()
+    if owner is None:
+        record_anonymous_upload(request, record.file_size)
     audit_log(
         request,
         "transfer_upload",

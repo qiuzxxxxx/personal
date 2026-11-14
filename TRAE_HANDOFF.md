@@ -1265,3 +1265,27 @@ Qoder 首轮审查的 R1–R4 与 S1–S6 全部处理完毕，同时完成阶�
 
 10. **追记（18:15，针对 Trae 提交 7a4405a）**：解析子进程临时目录改至 `backend/var/parse`（gitignore + `ignore_cleanup_errors=True`），已复核，方向正确、无异议；§18.7 第 8 条观察就此关闭。又清理了一轮测试运行残留（`knowledge-test-*`、`workspace-library-test-*`、`workspace-upload-test-*` 及三个含 "blat" 的探针文件）。低优先级建议（不阻塞）：`workspace/test_library.py`、`workspace/test_upload.py`、`knowledge/tests.py` 的 `tempfile.mkdtemp` 也可统一指向 `backend/var/`（如 `backend/var/test/`），避免测试被中断时残片散落在 `backend/` 根目录。
 11. **追记（18:30，Trae 提交 1b67c09）**：第 10 条的低优先级建议**已在 1b67c09 落实**——新增 `backend/config/testing.py` 提供 `scratch_dir()` / `remove_scratch()`，三个测试文件（`workspace/test_library.py`、`workspace/test_upload.py`、`knowledge/tests.py`）统一改用 `backend/var/test/` 作为临时目录根，清理失败不再中断用例；`.gitignore` 增加 `backend/var/`、`backend/*-test-*/` 与八位随机名规则。同时删除了基线提交遗留的 `backend/mtin2bgd`。全量 117 项通过，测试后仓库无残留。**§18.7 全部遗留项均已关闭，Qoder 无需再处理该建议。**
+
+### 18.8 Qoder 阶段 F 部署材料预审（2026-11-14 18:5x，工作区未提交状态）
+
+**审查对象**：阶段 F 当前工作区产物（`docker-compose.yml`、`backend/Dockerfile`、`frontend/Dockerfile`、`frontend/nginx.conf`、`.env.example`、`deploy/backup.sh`、`deploy/restore.sh`、`backend/config/health.py`，及 `settings.py` / `urls.py` / `crypto.py` / `transfer/views.py` / `requirements.txt` 的未提交改动）。
+
+**通过项（对齐第 12.7 节，提交时保持现状即可）**：
+
+1. Compose 五项 `mem_limit`（postgres 1g / redis 256m / web 768m / worker 512m / nginx 128m）与 12.7 预算表逐项一致；postgres `max_connections=30`、`shared_buffers=256MB`、`work_mem=4MB`；redis `--maxmemory 256mb` + `allkeys-lru` + 关闭持久化；db/redis 均有 healthcheck 且 web/worker 以 `service_healthy` 依赖。
+2. Web 为单 Daphne 进程承载 HTTP/SSE/WebSocket；worker `process_knowledge_jobs --interval 5`，并发 1。
+3. `settings.py`：postgres 支持 `CONN_MAX_AGE=60` + 连接健康检查；Redis cache 与 channel layer 分 DB；生产缺 `REDIS_URL` 时显式告警；生产强制稳定 `DJANGO_SECRET_KEY`、HSTS、Secure Cookie、`SECURE_PROXY_SSL_HEADER`；`DATABASE_ENGINE` 可回退 sqlite3（开发机）。
+4. `crypto.py`：`O_EXCL` 原子建主密钥文件 + 并发竞争回读；生产无主密钥拒绝启动、无效密钥明确报错——**第 2.5 节「主密钥原子初始化」遗留就此关闭**。
+5. `transfer/views.py` 匿名上传预算（总量 2 GB/窗口、60 次/窗口，Redis 键控）——**第 2.5 节「匿名上传总量配额」遗留就此关闭**；Redis cache/channel 引入——**「Redis 限速与广播层」遗留就此关闭**。
+6. `nginx.conf`：`/media/` 直接 404（文件仅经鉴权接口流出）、`/api/` 关闭 `proxy_buffering`（SSE 流式）、`/ws/` 3600s 长连接、上传体走磁盘临时目录、ACME 挑战走 80 明文、安全响应头齐全。
+7. `health.py` live/ready 拆分，仅探进程与依赖，不暴露用户数据；前端多阶段构建；`requirements.txt` 补 `psycopg[binary]`、`redis`、`channels-redis`；`backup.sh` 走 `docker compose exec pg_dump` 流式落盘。
+
+**待修项（F，建议提交前处理）**：
+
+- **F1（中）匿名预算客户端地址取法错误**：`transfer/views.py` 的 `check_anonymous_budget` / `record_anonymous_upload` 直接用 `request.META["REMOTE_ADDR"]`。Compose 部署里所有请求的 REMOTE_ADDR 都是 nginx 容器 IP——**全体匿名访客会共享同一个预算桶**（一人传满 2 GB，全站匿名上传 429）。应改用 `accounts/logging.py` 中基于 `X-Forwarded-For` + `NEXUS_TRUSTED_PROXY_HOPS` 的同一解析函数（登录限速正是用它，`test_login_limit_uses_socket_address` 有先例），两处口径必须一致。
+- **F2（低）预算计数非原子**：check 与 record 均为 cache get→set，并发上传可让两个请求都通过检查（轻微超限）。个人站点可接受；若要收紧，可拆成 bytes/files 两个 `cache.incr` 键（首次 `add`）。
+- **F3（低）smoke_test.py 健康端点过期**：仍请求 `/api/health/`，而 urls 已迁移为 `/api/health/live/` 与 `/api/health/ready/`。自检脚本需同步改为新端点（建议打 ready，因为它覆盖依赖检查）。
+
+**建议项（S，不阻塞）**：web 容器可加 compose healthcheck（`curl -fsS http://127.0.0.1:8000/api/health/live/`），让 nginx 与未来编排层能感知 web 存活；`redis-data` 卷在关闭持久化后实际不承载恢复语义，保留无害但可在注释里说明。
+
+预审期间 Trae 工作区静止（18:26 后无改动）。本节不要求立即回应；F1 建议在阶段 F 提交前修复，F2/F3 可随阶段 G 验收一并处理。

@@ -1,0 +1,152 @@
+# zixxx deployment for a single 4 core / 4 GB server (section 12.7).
+#
+# Memory budget (upper limits):
+#   postgres 1g · redis 256m · web 768m · worker 512m · nginx 128m
+# The remaining ~1.2 GB stays free for the OS, backups and short bursts.
+#
+# Before the first start:
+#   cp .env.example .env   and fill in the secrets.
+
+name: zixxx
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-zixxx}
+      POSTGRES_USER: ${POSTGRES_USER:-zixxx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+      # The database itself stays small; the container limit is the safety net.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command:
+      - postgres
+      - -c
+      - max_connections=30
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zixxx} -d ${POSTGRES_DB:-zixxx}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Only small short-lived values live here (rate limits, channel messages).
+    command:
+      - redis-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    volumes:
+      - redis-data:/data
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_ENV: ${DJANGO_ENV:-production}
+      DATABASE_ENGINE: ${DATABASE_ENGINE:-postgres}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    command:
+      - daphne
+      - -b
+      - 0.0.0.0
+      - -p
+      - "8000"
+      - config.asgi:application
+    volumes:
+      - media-data:/app/media
+      - static-data:/app/staticfiles
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 768m
+
+  worker:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DJANGO_ENV: ${DJANGO_ENV:-production}
+      DATABASE_ENGINE: ${DATABASE_ENGINE:-postgres}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    # The knowledge index worker. Concurrency is fixed at 1 (section 12.7).
+    command:
+      - python
+      - manage.py
+      - process_knowledge_jobs
+      - --interval
+      - "5"
+    volumes:
+      - media-data:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    mem_limit: 512m
+
+  nginx:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - certbot-conf:/etc/letsencrypt
+      - ./deploy/certbot-webroot:/var/www/certbot
+      - nginx-cache:/var/cache/nginx
+      - static-data:/usr/share/nginx/html/static:ro
+    depends_on:
+      - web
+    mem_limit: 128m
+
+  # Certificate renewal. Started on demand:
+  #   docker compose run --rm certbot renew
+  certbot:
+    image: certbot/certbot:latest
+    profiles: ["tools"]
+    volumes:
+      - certbot-conf:/etc/letsencrypt
+      - ./deploy/certbot-webroot:/var/www/certbot
+    entrypoint: >
+      sh -c "trap exit TERM;
+             while :; do certbot renew --webroot -w /var/www/certbot --quiet;
+             sleep 12h & wait $${!}; done;"
+
+volumes:
+  db-data:
+  redis-data:
+  media-data:
+  static-data:
+  certbot-conf:
+  nginx-cache:

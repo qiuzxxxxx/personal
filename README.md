@@ -1,33 +1,57 @@
-# zixxx —— 个人多模态 AI 助手、双人即时通讯与公开文件中转站
+# zixxx —— 个人工作台（任务 · 资料 · 知识库 · AI）
 
-一个仿 **Gemini 极简交互风格** 的自托管全栈 Web 应用，采用 **Vue 3 + Django** 架构。**打开主页即登录页**，登录后进入完整空间；集成了**自定义多模态 AI 对话**、**`qzx` 与 `sqx` 专属实时聊天与文件互传**，以及**支持免密上传与可见性控制的 `qzx` 最高管理员管理中转站**。
+一个仿 **Gemini 极简交互风格** 的自托管全栈 Web 应用，采用 **Vue 3 + Django** 架构。**打开主页即登录页**，围绕个人日常使用构建：**今日待办与任务管理、私人资料库、手机扫码上传、个人知识库与 AI 记忆**，并保留原有的**多模态 AI 对话**、**`qzx` ↔ `sqx` 双人实时聊天**与**免密文件中转站**。
+
+**部署目标（硬约束）**：单台 **4 核 4G 内存服务器**，所有组件（PostgreSQL、Redis、Nginx、Daphne、知识索引 worker、备份）同机运行。全部代码与默认参数必须在该容量下通过验收，资源预算见「部署」一节与 [TRAE_HANDOFF.md](TRAE_HANDOFF.md) 第 12.7 节。
 
 ---
 
-## 一、核心功能矩阵
+## 一、功能矩阵
 
-### 1. Gemini 风格多模态 AI Agent
+### 1. 今日工作台与任务（已完成）
 
-- **极简对话界面**：左侧可折叠历史会话栏 + 居中悬浮多模态输入框，支持 Markdown 实时流式渲染、代码高亮（highlight.js）与 LaTeX 数学公式（KaTeX，行内 `$...$` 与独立 `$$...$$`）。
-- **多模态文件理解**：支持上传 PDF、Word（.docx）、TXT、Markdown 文档及图片（PNG/JPG/WebP）。文档在服务端用 PyMuPDF / python-docx 提取文本注入上下文；图片经服务端缩放编码后以 data-URL 形式随多模态请求发送。
-- **自定义 API 配置**：支持 OpenAI、Gemini、DeepSeek、Claude 和 OpenAI 兼容网关。已保存的 API Key 在服务端加密存储，只随请求发送至对应的模型来源。
-- **测试连接**：模型设置中的「测试连接」会用当前表单发起一次简短的流式请求，显示首次文本响应耗时或失败原因，无需先保存配置。
-- **流式体验**：SSE 流式输出、可随时「停止生成」、失败时保留已生成的部分内容并给出可读错误。
-- **登录准入**：AI 对话仅对 `qzx` / `sqx` 开放；游客账号 `yk` 与未登录访客均无法使用，接口直接返回 401/403。
+- **今日页面**（`/today`）：当天安排、逾期事项、待重新安排、待安排任务与当日完成数，顶部快速新增待办。
+- **任务管理**（`/tasks`）：标题、描述、优先级（low/normal/high）、计划日期、截止时间、项目、标签、附件、手动排序、完成/重开/取消/软删除与回收站恢复。
+- **项目**（`/projects`）：轻量项目列表与归档；**每日记录**（`/journal`）：按日期保存 Markdown 正文，owner + date 唯一。
+- **多端一致**：可变记录全部带 `version` 乐观锁（PATCH 提交旧版本返回 409），创建类操作支持 `client_request_id` 幂等；切换账号时前端整体清空缓存。
 
-### 2. 双人专属即时通讯（`qzx` ↔ `sqx`）
+### 2. 私人资料库与手机扫码上传（已完成）
 
-- **预置专属账号**：`python manage.py init_users` 为新账号和待重新设密的账号生成初始密码，也可从环境变量读取。
-- **实时文字与文件互传**：基于 WebSocket（Django Channels，InMemory 层）低延迟推送，支持「正在输入」提示、断线自动重连；聊天窗口中可直接发送文档/图片，图片在线预览、任意文件可下载。WebSocket 不可用时自动回退 REST 发送。
+- **资料库**（`/library`）：资料夹、标签、备注、列表筛选、在线预览（复用全站预览器）、鉴权下载、重命名、移动、回收站与恢复；存储路径由服务端生成，`sha256` 校验完整性。
+- **电脑扫码**：在资料库或任务详情生成限时上传二维码（UploadSession），手机无需登录，凭证只绑定指定目标投递文件；数据库只存 token 摘要，二维码地址用 URL fragment 传递。
+- **手机落地页**（`/upload`）：独立简洁布局，逐文件进度、失败原因与单独重试；会话/收据两级幂等（重试不产生重复资料），配额预占、到期与撤销规则见交接文档第 6–7 节。
+- 每文件 ≤ 100 MiB，单会话 ≤ 20 个文件 / 500 MiB，会话有效期 10 分钟。
 
-### 3. 免密文件中转站（最高管理员 `qzx` 完全控制权）
+### 3. 个人知识库与 AI 记忆（阶段 E 进行中）
 
-- **免密即传（访客模式）**：无需登录，打开中转站页面即可拖拽上传；上传时选择 **「对所有人可见」** 或 **「仅最高管理员 qzx 可见（私密投递）」**，可附备注与署名。
-- **可见性权限隔离**：
-  - 普通访客 / 未登录用户：仅可上传、查看并下载 `is_public=True` 的文件；无法修改、重命名、切换权限或删除任何文件（私密投递后访客端立即隐藏）。
-  - 游客账号 `yk`：登录后可上传，并可浏览「公开文件 + 自己投递的文件」（含自己的私密投递），可下载这些文件；**没有**删除、重命名、修改备注、切换可见性的权限；侧边栏不出现 AI 对话与双人密聊入口。
-  - 最高管理员 `qzx`：登录后可查看和下载全部文件、重命名、修改备注、切换可见性和删除文件。
-- 文件只通过鉴权下载接口流出，`/media` 目录不对外暴露。
+- **知识集合与笔记**（`/knowledge`）：手写 Markdown 笔记；本人资料（TXT / Markdown / 文本 PDF / DOCX）、每日记录、AI 消息可一键「加入知识库」，保留来源与版本关系。
+- **中文关键词检索**：首版为确定性关键词方案（CJK 单字 + 二元组、latin 小写化），按 owner、有效集合与当前 ready 修订在数据库内先过滤再排序；不依赖向量服务。
+- **索引 worker**：解析作业持久化在数据库（租约 + claim token），`manage.py process_knowledge_jobs` 执行；扫描 PDF 标记 `needs_ocr`，首版不做 OCR。
+- **AI 接入**：会话级「使用知识库 / 个人记忆 / 当前工作台」三个开关；资料片段以只读块注入并要求标注 `[S1]` 等来源编号，回答可点开来源定位（页码 / 标题路径）。
+- **个人记忆**（`/knowledge/memories`）：候选（suggested）与已确认（active）分离；编辑、停用、恢复、忘记与导出；忘记会抬升上下文水位，旧历史不再注入模型（界面仍可见）。
+- **状态说明**：后端已提交，前端页面与对话联调、20 题固定评估集验收仍在进行；口径与遗留问题以 [TRAE_HANDOFF.md](TRAE_HANDOFF.md) 第 18 节为准。
+
+### 4. 多模态 AI 对话（已有）
+
+- 左侧历史会话栏 + 居中悬浮多模态输入框，Markdown 流式渲染、代码高亮与 KaTeX 公式；可随时停止生成。
+- 支持 PDF / DOCX / TXT / Markdown 与图片上传；图片缩放编码后随多模态请求发送。
+- **内置默认模型**：未保存自己的 Key 时，服务端自动使用内置 DeepSeek 配置（多模态模型 `deepseek-flash`）开箱即用；保存的 API Key 服务端 Fernet 加密，只返回掩码。
+- **测试连接**：模型设置中直接用当前表单发起一次短流式请求，显示首响耗时或失败原因。
+- 仅 `qzx` / `sqx` 可用；游客 `yk` 与未登录访客被 401/403 拒绝。
+
+### 5. 双人密聊（已有）
+
+- `qzx` ↔ `sqx` 专属：WebSocket 实时文字与文件互传、正在输入提示、断线重连；WS 不可用自动回退 REST。握手经 `Sec-WebSocket-Protocol: zixxx.chat, token.<token>` 子协议，URL 不携带账号 Token。
+
+### 6. 免密文件中转站（已有）
+
+- **免密即传**：无需登录即可上传，选择「对所有人可见」或「仅 qzx 可见（私密投递）」；未登录访客进入独立裸布局，不暴露站内其他功能入口。
+- **权限隔离**：访客/未登录仅见公开文件；`yk` 见公开 + 自己的投递；`qzx` 拥有全部管理权（重命名、备注、可见性切换、删除）。
+- 文件只经鉴权下载接口流出，`/media` 不对外暴露。
+
+### 7. 账号管理与操作日志（已有）
+
+- 三级权限（rank 2 > rank 1 > rank 0）：分级改密（12 位以上 + 常见密码检查）、越级查询 403、全量操作日志（登录、改密、上传、删除、模型配置保存，含 IP 与时间戳）。
 
 ---
 
@@ -35,222 +59,171 @@
 
 | 层级 | 技术选型 | 说明 |
 | :--- | :--- | :--- |
-| 前端框架 | Vue 3 (Vite) + TypeScript | Composition API，构建快速 |
-| UI 与样式 | Tailwind CSS + Lucide Icons | 还原 Gemini 留白质感与响应式侧边栏 |
-| 状态与路由 | Pinia + Vue Router | 管理登录态、API 配置及多视图切换 |
-| 渲染引擎 | `markdown-it` + `highlight.js` + `KaTeX` | 代码高亮与数学公式渲染 |
-| 后端框架 | Django 5 + Django REST Framework | 标准化 RESTful API 与权限控制 |
-| 实时通讯 | Django Channels + Daphne (InMemory) | 无需 Redis 即可支持双人实时聊天 |
-| 文件解析 | `PyMuPDF` / `python-docx` / `Pillow` | 提取上传文档内容供 AI 阅读 |
-| 数据库 | SQLite3 | 单文件零配置，备份迁移极简 |
+| 前端 | Vue 3 (Vite) + TypeScript + Pinia + Vue Router | 构建前执行 `vue-tsc` 类型检查 |
+| UI | Tailwind CSS + Lucide Icons | Gemini 留白质感、移动端适配（最低 360px） |
+| 渲染 | markdown-it + highlight.js + KaTeX | 禁止原始 HTML 进入 `v-html` |
+| 后端 | Django 5 + DRF + Channels + Daphne | SQLite 开发 / PostgreSQL 生产（阶段 F） |
+| 实时 | Channels + Daphne | 开发 InMemory 层；生产 Redis（多进程前置条件） |
+| 文件 | PyMuPDF / python-docx / Pillow | 附件解析与知识库位置感知解析（保留页码、标题路径） |
+| 加密 | cryptography (Fernet) | API Key 服务端加密存储 |
+| 数据库 | SQLite（开发）/ PostgreSQL（生产） | 生产方案见阶段 F |
 
 ---
 
-## 三、项目目录结构
+## 三、项目结构
 
 ```text
-zixxx-agent/
-├── backend/                        # Django 后端工程
-│   ├── config/                     # 全局配置 (settings.py, asgi.py, urls.py)
-│   ├── accounts/                   # 用户认证与预置账号初始化
-│   │   └── management/commands/init_users.py
-│   ├── agent/                      # AI 对话、多模态解析与自定义 API 代理
-│   │   ├── llm.py                  # OpenAI / Gemini / Claude 流式适配器
-│   │   ├── parsing.py              # PDF / DOCX / TXT / 图片解析与校验
-│   │   └── views.py                # 会话、附件上传、SSE 流式对话
-│   ├── chat/                       # qzx & sqx 实时通讯与文件互传
-│   │   ├── consumers.py            # WebSocket Consumer（鉴权 + 群发）
-│   │   └── views.py                # 历史消息、文件上传与下载
-│   ├── transfer/                   # 免密文件中转站 (is_public 可见性控制)
-│   │   ├── models.py               # TransferFile 模型
-│   │   ├── permissions.py          # qzx 专属增删改查权限校验
-│   │   └── views.py                # 上传、列表过滤、可见性切换、下载与删除
-│   ├── media/                      # 本地文件存储 (chat_files/ & transfer_station/ & agent_uploads/)
-│   ├── manage.py
-│   ├── requirements.txt
-│   ├── smoke_test.py               # 后端接口端到端自检脚本
-│   ├── ws_smoke.mjs                # WebSocket 自检脚本 (node)
-│   └── seed_demo.py                # 可选：生成演示数据（仅本地视觉验收用）
-└── frontend/                       # Vue 3 前端工程
-    ├── src/
-    │   ├── api/                    # Axios 封装 (自动携带 Token / 会话标识)
-    │   ├── components/
-    │   │   ├── Sidebar.vue         # Gemini 风格侧边栏 (AI对话 / 双人密聊 / 文件中转站)
-    │   │   ├── ApiConfigModal.vue  # 自定义 API Key / BaseURL / 模型配置弹窗
-    │   │   ├── MultimodalInput.vue # 支持拖拽上传图片与文档的底部悬浮输入框
-    │   │   ├── MarkdownRenderer.vue# Markdown + 代码高亮 + KaTeX + 复制按钮
-    │   │   └── ChatFileCard.vue    # 聊天文件卡片（图片预览 / 下载）
-    │   ├── views/
-    │   │   ├── AgentChatView.vue   # AI Agent 主对话页
-    │   │   ├── DirectChatView.vue  # qzx & sqx 互发消息与文档页
-    │   │   ├── TransferStation.vue # 免密文件中转站 (qzx 管理栏与可见性开关)
-    │   │   └── LoginView.vue       # 登录页 (仅密聊及 qzx 管理中转站时需登录)
-    │   ├── stores/                 # Pinia: auth / agent / config / ui / toast
-    │   └── router/index.ts
-    └── package.json
+├── backend/
+│   ├── config/          # settings / asgi / urls / http 助手 / VersionedModel
+│   ├── accounts/        # 认证、三级权限、操作日志、init_users 命令
+│   ├── agent/           # AI 对话：llm.py 三协议流式适配器、parsing.py、SSE 会话
+│   ├── chat/            # qzx ↔ sqx WebSocket 密聊
+│   ├── transfer/        # 免密中转站（is_public 可见性、qzx 管理）
+│   ├── workspace/       # 任务/项目/标签/每日记录/资料库/扫码上传
+│   │   ├── library.py / library_views.py
+│   │   └── upload_auth.py / upload_urls.py / upload_views.py
+│   ├── knowledge/       # 知识库：模型、检索、上下文组装、记忆、索引作业、评估集
+│   │   └── management/commands/   # process_knowledge_jobs / rebuild / seed / cleanup / evaluate
+│   └── media/           # 本地文件存储（不对外暴露）
+└── frontend/
+    └── src/
+        ├── views/       # Today / Tasks / Projects / Journal / Library / MobileUpload
+        │               # Knowledge / KnowledgeMemories / AgentChat / DirectChat
+        │               # TransferStation / Accounts / Login
+        ├── components/  # Sidebar、KnowledgeScopeBar、ApiConfigModal、FilePreviewModal 等
+        ├── stores/      # auth / agent / config / workspace / knowledge / ui / toast
+        └── api/         # axios 封装（agent / workspace / library / upload / knowledge）
 ```
 
 ---
 
-## 四、核心数据库与权限设计
-
-### 1. 预置账号
+## 四、预置账号
 
 ```bash
 python manage.py init_users
 ```
 
-| 用户名 | 密码 | 角色定位 | 权限说明 |
+| 用户名 | 密码 | 角色 | 权限 |
 | --- | --- | --- | --- |
-| `qzx` | `NEXUS_PASSWORD_QZX` 或随机生成 | **最高管理员**（rank 2） | 与 `sqx` 密聊、使用 AI Agent、管理中转站、重置下级账号密码、查看全部账号日志 |
-| `sqx` | `NEXUS_PASSWORD_SQX` 或随机生成 | **管理员**（rank 1） | 与 `qzx` 密聊、使用 AI Agent、重置普通账号密码、查看权限内日志 |
-| `yk` | `NEXUS_PASSWORD_YK` 或随机生成 | 游客（rank 0） | 上传文件、浏览公开与自己的文件 |
+| `qzx` | `NEXUS_PASSWORD_QZX` 或随机生成 | **最高管理员**（rank 2） | 全部功能：工作台、知识库、AI、密聊、中转站最高管理、账号管理 |
+| `sqx` | `NEXUS_PASSWORD_SQX` 或随机生成 | **管理员**（rank 1） | 本人工作台与知识库、AI、密聊、重置普通账号 |
+| `yk` | `NEXUS_PASSWORD_YK` 或随机生成 | 游客（rank 0） | **仅中转站**：上传、浏览公开与自己的文件；无工作台/知识库/AI/密聊入口 |
 
-### 2. 文件中转站模型（`transfer/models.py`）
-
-```python
-class TransferFile(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    file = models.FileField(upload_to='transfer_station/%Y/%m/')
-    original_name = models.CharField(max_length=255, verbose_name="文件名")
-    file_size = models.BigIntegerField(default=0, verbose_name="文件大小(字节)")
-    file_type = models.CharField(max_length=100, blank=True, verbose_name="MIME类型")
-    remark = models.CharField(max_length=255, blank=True, default='', verbose_name="备注说明")
-    is_public = models.BooleanField(default=True, verbose_name="是否对所有人可见")
-    uploader_name = models.CharField(max_length=64, default='免密访客', verbose_name="上传者标识")
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name="上传时间")
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
-```
-
-### 3. 中转站接口与权限规则
-
-| HTTP 方法 | 接口路径 | 访问权限 | 功能描述 |
-| --- | --- | --- | --- |
-| `GET` | `/api/transfer/files/` | 免密公开 | 未登录仅返回 `is_public=True`；登录非最高管理员（如 `yk` / `sqx`）返回公开 + 自己投递的文件；`qzx` 返回全部 |
-| `POST` | `/api/transfer/files/` | 免密公开 | 无需密码上传，表单字段 `is_public`（公开 / 仅最高管理员可见） |
-| `GET` | `/api/transfer/files/<id>/download/` | 条件公开 | 公开文件人人可下载；私密文件仅上传者与 `qzx` |
-| `PATCH` | `/api/transfer/files/<id>/` | 仅 `qzx` | 修改文件名、备注或切换可见性 |
-| `DELETE` | `/api/transfer/files/<id>/` | 仅 `qzx` | 删除记录并同步清理磁盘物理文件 |
-
-聊天客户端在 `/ws/chat/` 握手时通过 `Sec-WebSocket-Protocol` 提交 `zixxx.chat, token.<token>`，服务端只回显 `zixxx.chat`。反向代理应避免记录认证相关请求头。
+登录后默认跳转：`qzx` / `sqx` → 工作台首页 `/today`（可进入 AI 对话），`yk` → `/transfer`。
 
 ---
 
-## 五、快速启动指南
+## 五、快速启动
 
-### 1. 启动后端 (Django)
+### 1. 后端
 
 ```bash
 cd backend
 python -m venv venv
-# Windows 激活: venv\Scripts\activate  |  Linux/macOS 激活: source venv/bin/activate
+# Windows: .\venv\Scripts\activate   Linux/macOS: source venv/bin/activate
 pip install -r requirements.txt
 
 python manage.py migrate
 python manage.py init_users
 
-# 启动支持 WebSocket 的 ASGI 服务（默认 8000 端口）
+# 开发服务器（支持 WebSocket，默认 8000）
 daphne -b 0.0.0.0 -p 8000 config.asgi:application
 ```
 
-### 2. 启动前端 (Vue 3)
+### 2. 前端
 
 ```bash
 cd frontend
-npm install
-npm run dev
+npm ci          # Windows 下若 esbuild 报 TEMP 拒绝访问，先设置 TEMP/TMP 到可写目录
+npm run dev     # http://localhost:5173，/api 与 /ws 代理到 127.0.0.1:8000
 ```
 
-访问 `http://localhost:5173`：
-
-- **主页即登录页**：打开 `/` 直接进入登录页；登录成功后按角色进入空间（`qzx` / `sqx` → AI 对话，`yk` → 中转站）；
-- 左侧 **「文件中转站」** 可**免密直接上传/下载公开文件**；
-- 登录 `qzx` 后，中转站解锁「公开/私密切换」「重命名 / 备注」「删除」；
-- 登录 `qzx` 或 `sqx` 进入双人实时聊天，并解锁 AI 对话与「账号管理」（按层级重置下级账号密码、查看下级账号操作日志）；
-- 游客账号 `yk` 可上传与浏览中转站（含自己的私密投递）；
-- 未登录访问 `/agent`、`/chat`、`/accounts` 会自动跳回主页登录页。
-
-> 前端开发服务器默认把 `/api` 与 `/ws` 代理到 `http://127.0.0.1:8000`。若后端跑在其他端口，用环境变量覆盖：
-> `VITE_PROXY_TARGET=http://127.0.0.1:8001 npm run dev`
-
-### 3. 可选：本地演示与自检
+### 3. 知识库 worker 与初始化（阶段 E）
 
 ```bash
-# 生成演示数据（中转站文件 / 聊天记录 / 一条含公式与代码的 AI 会话）
-cd backend && python seed_demo.py
+cd backend
+python manage.py process_knowledge_jobs --once          # 执行一批待处理索引作业
+python manage.py process_knowledge_jobs --once --limit 10
+python manage.py rebuild_knowledge_index --document <uuid> --dry-run
+python manage.py seed_personal_knowledge --owner qzx --dry-run   # 幂等初始化个人条目
+python manage.py cleanup_knowledge_data --dry-run
+```
 
-# 后端接口端到端自检（用测试账号，设置对应的 NEXUS_PASSWORD_* 环境变量）
+### 4. 测试与自检
+
+```bash
+cd backend
+.\venv\Scripts\python.exe manage.py test agent config.test_security workspace knowledge --noinput
+
+# 端到端自检脚本（勿对真实数据库运行，会创建/改密/删除测试数据）
 python smoke_test.py http://127.0.0.1:8000
-
-# WebSocket 自检（需要 Node.js 24）
 node ws_smoke.mjs
 ```
 
-仓库内 `.tools/mock-llm.cjs` 是一个本地 OpenAI 兼容流式 mock（`node .tools/mock-llm.cjs`，监听 `127.0.0.1:9099`）。启动后端前设置 `NEXUS_LLM_PRIVATE_ORIGINS=http://127.0.0.1:9099`，然后在 API 配置中选择「自定义」，Base URL 填 `http://127.0.0.1:9099/v1`，即可在无真实 Key 的情况下体验流式渲染。
-
-### 4. 生产构建
-
 ```bash
-cd frontend && npm run build     # 产物在 frontend/dist
+cd frontend
+npm run build    # 先 vue-tsc 再 vite build，产物在 frontend/dist
+npm audit        # 联网失败时记录原因，不得输出“无漏洞”
 ```
 
-将 `dist` 交给 Nginx 等静态服务器，并把 `/api`、`/ws` 反代到 Daphne。前端和后端需一同更新。启用 HTTPS，并配置 `DJANGO_ALLOWED_HOSTS`、稳定的 `DJANGO_SECRET_KEY` 和现有的 `NEXUS_MASTER_KEY`（若一直使用 `backend/.master.key`，应保留该文件）。跨域部署时配置 `DJANGO_CORS_ORIGINS`。若在防止客户端伪造转发地址的可信反代之后运行，可设置 `NEXUS_TRUSTED_PROXY_HOPS`。
+本地无 Key 体验流式对话：`node .tools/mock-llm.cjs`（监听 `127.0.0.1:9099`），API 配置选「自定义」，Base URL 填 `http://127.0.0.1:9099/v1`，并设置 `NEXUS_LLM_PRIVATE_ORIGINS=http://127.0.0.1:9099`。
 
 ---
 
-## 六、文件在线预览
+## 六、部署（4 核 4G 硬约束）
 
-中转站与密聊中的常见文件支持**浏览器内在线预览**（[FilePreviewModal.vue](frontend/src/components/FilePreviewModal.vue)）：
+| 组件 | 内存预算 | 关键约束 |
+| --- | --- | --- |
+| 系统 + Nginx | ≤ 500 MiB | SPA history fallback；`/api/` 关闭响应缓冲（SSE）；`/ws/` 转发 Upgrade |
+| PostgreSQL | ≤ 900 MiB | shared_buffers=256MB、max_connections=30 |
+| Redis | ≤ 256 MiB | maxmemory + 淘汰策略；channels / 限速 / 短 TTL 缓存共用，禁止存大对象 |
+| Daphne (web) | ≤ 700 MiB | 单进程 async；多进程前必须先接入 Redis 层与 Redis 限速 |
+| knowledge-worker | ≤ 450 MiB | 并发固定 1；解析子进程有内存上限与超时，被 OOM 后由租约重领 |
+| 余量 | ≥ 500 MiB | 备份安排在低谷时段；建议 2G swap 兜底，正常运行不依赖 |
 
-| 类型 | 扩展名 | 预览方式 |
-| :--- | :--- | :--- |
-| 图片 | png / jpg / jpeg / webp / gif | 大图查看（SVG 因可携带脚本被排除，仅可下载） |
-| 文档 | pdf | 内嵌浏览器 PDF 阅读器 |
-| 文本 | txt / csv / json / log / yml / ini（≤2 MB） | 等宽字体原文 |
-| Markdown | md / markdown | 复用 AI 回答的渲染器 |
-| 音视频 | mp3 / wav / mp4 / webm 等 | 原生播放器 |
-| 其他 | 压缩包 / 办公文档 / 可执行文件 | 不提供预览，仅下载 |
+完整预算、9 条强制要求与验收清单见 [TRAE_HANDOFF.md](TRAE_HANDOFF.md) 第 12.7 节（含 4C4G 等价环境满负荷验收）。Docker Compose、Nginx 模板与备份恢复脚本由阶段 F 交付，环境变量清单见其第 12.3 节。
 
-预览通过鉴权下载接口取回 blob 后在本地渲染，不会二次上传；压缩包与可执行文件出于安全考虑一律不预览。
-
----
-
-## 七、使用声明与合规
-
-- 站内内置《zixxx 使用声明》（[TERMS.md](TERMS.md)，前端 [terms.ts](frontend/src/lib/terms.ts)），引用《网络安全法》《民法典》《个人信息保护法》《数据安全法》《著作权法》《未成年人保护法》《生成式人工智能服务管理暂行办法》《网络信息内容生态治理规定》等法条，列明**禁止信息十项、禁止行为七项**与注意事项。
-- **同意机制**：中转站首次上传前必须勾选同意（按版本号记录于浏览器），未同意时上传入口被禁用；登录页与中转站页脚可随时查看全文。
-- 管理员对违规内容可不经通知直接删除；声明版本升级后需重新同意。
+已生效的环境变量：`DJANGO_DEBUG`、`DJANGO_SECRET_KEY`、`DJANGO_ALLOWED_HOSTS`、`DJANGO_CORS_ORIGINS`、`DJANGO_CSRF_TRUSTED_ORIGINS`、`NEXUS_MASTER_KEY`、`NEXUS_BUILTIN_LLM_API_KEY`、`NEXUS_LLM_PRIVATE_ORIGINS`、`NEXUS_TRUSTED_PROXY_HOPS`、`NEXUS_PASSWORD_QZX/SQX/YK`。
 
 ---
 
-## 八、账号管理与操作日志（三级权限）
+## 七、安全要点
 
-权限层级：**最高管理员 `qzx`（rank 2）＞ 管理员 `sqx`（rank 1）＞ 普通账号（rank 0，如 `yk`）**。
-
-- **改密**（`POST /api/auth/<username>/password/`）：操作者级别须高于目标账号，且目标须为应用账号。新密码至少 12 个字符并经过常见密码检查。重置后目标账号旧 Token 立即失效。
-- **日志**（`GET /api/auth/logs/?username=X`）：本人日志始终可查；最高管理员可查任何账号；`sqx` 仅可查普通账号（rank 0）；越级查询返回 403。
-- **账号清单**（`GET /api/auth/users/`）：仅管理员（含 `sqx`）。
-- **中转站管理**：仅最高管理员 `qzx`（私密文件对「上传者 + 最高管理员」可见）。
-- **操作日志**（[accounts/models.py](backend/accounts/models.py) 的 `ActivityLog`）记录：登录成功/失败、退出、密码被重置（含操作人）、中转站上传/修改/删除、模型配置保存，附 IP 与时间戳；记录失败永不影响业务请求。
-- 前端入口：侧边栏「账号管理」（仅管理员可见）→ 每行「查看日志 / 更改密码」，按钮按层级自动禁用；非管理员访问 `/accounts` 看到准入页。
+- **API Key 深度加密**：Fernet 密文入库，接口只返回 `has_key` 与掩码；主密钥取 `NEXUS_MASTER_KEY`，否则生成于 `backend/.master.key`（已 git-ignore，迁移时必须保留）。
+- **内置默认 Key** 由部署环境 `NEXUS_BUILTIN_LLM_API_KEY` 提供，不出现在浏览器与网络响应中；曾写入源码的旧 Key 应在服务商后台吊销。
+- **出站限制**：内网模型地址只允许 `NEXUS_LLM_PRIVATE_ORIGINS` 中列出的具体来源；已保存密钥按来源绑定，限制跨来源重定向与 DNS 解析结果。
+- **文件安全**：所有下载经鉴权接口，带 `Content-Disposition` / `nosniff` / CSP sandbox；中转站拒绝可执行脚本后缀；聊天 80 MiB、中转站 500 MiB、AI 附件 25 MiB、扫码上传 100 MiB。
+- **扫码凭证**：数据库只存 token 摘要；fragment 传递、日志脱敏、`Referrer-Policy: no-referrer`；Upload 凭证只能投递文件，不能换取账号 Token 或下载资料。
+- **升级**：先备份再迁移；`accounts/0002` 会停用已公开默认密码的账号并撤销 Token，需执行 `init_users` 重新设密；更换 `NEXUS_MASTER_KEY` 会使原密文不可解密。
+- Markdown 禁止原始 HTML；私人 API 响应 `no-store`；登录限速、改密强度检查；InMemory Channel Layer 仅适用单进程。
 
 ---
 
-## 九、安全说明
+## 八、使用声明
 
-- 升级已有安装时，先备份数据库，再执行 `python manage.py migrate` 和 `python manage.py init_users`。迁移会停用仍使用已公开默认密码的预置账号口令并撤销对应 Token。初始化命令为当前的三个预置账号重新设密，已自定义的密码继续有效。
-- 默认模型的服务端密钥由 `NEXUS_BUILTIN_LLM_API_KEY` 提供。升级前应在服务商后台吊销旧密钥并生成新密钥。自定义公网模型地址可以直接配置，内网模型只允许使用部署方在 `NEXUS_LLM_PRIVATE_ORIGINS` 中列出的具体来源（协议、主机、端口）。
-- 私密文件按账号 ID 鉴权。旧版预置账号文件可由保留署名迁移归属，其他旧记录保留原文件和署名，归属未能确认的私密记录由最高管理员访问。
-- **模型 API Key 服务端深度加密**：保存时经 HTTPS 上传一次，之后以 Fernet（AES-128-CBC + HMAC-SHA256）密文存入数据库（[agent/crypto.py](backend/agent/crypto.py)）；`GET /api/agent/config/` 只返回 `has_key` 与掩码提示（如 `sk-…3456`），明文永不回传浏览器、不出现在页面源码与爬虫可见内容中。主密钥优先取环境变量 `NEXUS_MASTER_KEY`，否则自动生成于 `backend/.master.key`（chmod 600，已 git-ignore）。对话请求只带 `use_saved: true`，由后端内存解密后直连模型。
-- 聊天/中转站文件下载均带 `Content-Disposition`、`X-Content-Type-Options: nosniff` 与 `Content-Security-Policy: sandbox`，图片以外的内容强制下载，避免浏览器直接执行上传内容。
-- 中转站拒绝可执行文件/脚本后缀上传；聊天文件限 80 MB、中转站限 500 MB、AI 附件限 25 MB。
-- InMemory Channel Layer 仅适合单进程部署；多进程/多机部署请替换为 Redis Channel Layer。
+- 站内内置《zixxx 使用声明》（[TERMS.md](TERMS.md)，前端 [terms.ts](frontend/src/lib/terms.ts)）：完整版适用于注册账号；游客在中转站仅展示《文件中转站使用声明》，不涉及 AI、密聊与模型密钥内容。
+- 同意按版本号记录于浏览器，升级后需重新同意；管理员对违规内容可不经通知删除。
+- 联系：zixuanqiu72@gmail.com
+
+---
+
+## 九、开发进度与协作
+
+实施按 [TRAE_HANDOFF.md](TRAE_HANDOFF.md) 执行，其第 18 节为开发协作记录区（口径、进度表、审查反馈与复验记录）。
+
+| 阶段 | 内容 | 状态 |
+| --- | --- | --- |
+| A–D | 基线 / 任务工作台 / 私人资料库 / 扫码上传 | 已完成 |
+| E | 个人知识库与 AI 记忆 | **进行中**（后端已提交，前端联调与评估验收中） |
+| F | 服务器就绪（PostgreSQL / Redis / Compose / Nginx / 备份） | 未开始 |
+| G | 总体验收 | 未开始 |
+
+新增模块的口径与已知问题以第 18 节为唯一权威来源；本 README 与实现不一致时，以交接文档为准。
 
 ---
 
 ## 十、站点信息
 
-- **联系**：zixuanqiu72@gmail.com（页脚与《使用声明》中均可点击）
+- **联系**：zixuanqiu72@gmail.com（页脚与《使用声明》可点击）
 - **友链**：[qzx 的博客](https://blog.qzx1028.space) · [GitHub @qiuzxxxxx](https://github.com/qiuzxxxxx)
-- **备案**：[豫ICP备2026020102号](https://beian.miit.gov.cn/)
-- 友链与备案号展示于全站页脚（[SiteFooter.vue](frontend/src/components/SiteFooter.vue)，含登录页），备案号的修改请直接编辑该组件。
+- **备案**：[豫ICP备2026020102号](https://beian.miit.gov.cn/)（展示于 [SiteFooter.vue](frontend/src/components/SiteFooter.vue)）

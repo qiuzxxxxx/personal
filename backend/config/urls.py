@@ -1,15 +1,15 @@
 from django.contrib import admin
 from django.urls import include, path
-from django.http import JsonResponse
 
-
-def healthcheck(_request):
-    return JsonResponse({"status": "ok", "service": "zixxx"})
+from .health import health, live
 
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/health/", healthcheck, name="health"),
+    # Liveness only reports the process; readiness also checks the database
+    # and Redis. Neither endpoint exposes any user data.
+    path("api/health/live/", live, name="health-live"),
+    path("api/health/ready/", health, name="health-ready"),
     path("api/auth/", include("accounts.urls")),
     path("api/agent/", include("agent.urls")),
     path("api/chat/", include("chat.urls")),

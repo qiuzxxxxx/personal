@@ -31,7 +31,13 @@ def _valid_fernet(raw: str) -> bool:
 @lru_cache(maxsize=1)
 def get_master_key() -> bytes:
     from_env = os.environ.get(MASTER_KEY_ENV, "").strip()
-    if from_env and _valid_fernet(from_env):
+    if from_env:
+        if not _valid_fernet(from_env):
+            raise RuntimeError(
+                f"{MASTER_KEY_ENV} 不是有效的 Fernet 密钥，请用 "
+                '`python -c "from cryptography.fernet import Fernet;'
+                'print(Fernet.generate_key().decode())"` 生成。'
+            )
         return from_env.encode("utf-8")
 
     if KEY_FILE.exists():
@@ -41,11 +47,38 @@ def get_master_key() -> bytes:
             stored = ""
         if stored and _valid_fernet(stored):
             return stored.encode("utf-8")
+        if getattr(settings, "IS_PRODUCTION", False):
+            raise RuntimeError(
+                f"{KEY_FILE} 存在但不是有效的 Fernet 密钥。"
+                f"已有密文将无法解密，请恢复原密钥或设置 {MASTER_KEY_ENV}。"
+            )
+
+    if getattr(settings, "IS_PRODUCTION", False):
+        # A temporary key would make every stored secret unreadable after the
+        # next restart, so production must provide the key explicitly.
+        raise RuntimeError(
+            f"生产环境缺少主密钥。请设置 {MASTER_KEY_ENV} 环境变量，"
+            f"或放置 {KEY_FILE} 文件。"
+        )
 
     generated = Fernet.generate_key().decode("ascii")
     try:
-        KEY_FILE.write_text(generated, encoding="utf-8")
-        os.chmod(KEY_FILE, stat.S_IRUSR | stat.S_IWUSR)
+        # O_EXCL makes the creation atomic: a concurrent worker that loses the
+        # race re-reads the file instead of writing a second key.
+        descriptor = os.open(
+            KEY_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, stat.S_IRUSR | stat.S_IWUSR
+        )
+        try:
+            os.write(descriptor, generated.encode("ascii"))
+        finally:
+            os.close(descriptor)
+    except FileExistsError:
+        try:
+            stored = KEY_FILE.read_text(encoding="utf-8").strip()
+        except OSError:
+            stored = ""
+        if stored and _valid_fernet(stored):
+            return stored.encode("utf-8")
     except OSError:
         # A read-only filesystem still allows in-process encryption for this
         # run; the key simply will not survive a restart.
