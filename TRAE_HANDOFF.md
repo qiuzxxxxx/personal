@@ -1151,6 +1151,7 @@ Trae 使用虚构测试资料建立至少 20 个固定问题，覆盖中文短�
 5. 前端构建在 Windows 上必须先设置 `$env:TEMP` 与 `$env:TMP` 指向可写目录，否则 esbuild 报 Temp 拒绝访问。
 6. 本机开发环境会拦截 Python 的 `os.remove`，SQLite 无法删除回滚日志 `backend/db.sqlite3-journal`，导致每次重新打开数据库时上一个会话的最后一次事务被回滚。表现是“刚写入或删除的数据第二天就不见了”，而 Django 测试库（内存库）不受影响。处置方式：在执行会写开发库的脚本前先执行 `pragma journal_mode=MEMORY`，或用 PowerShell 的 `Remove-Item` 清掉残留的 `-journal` 文件。真实服务器使用 PostgreSQL，不存在该问题。
 7. 阶段 E 已确认的评估结果：固定评估集 24 题，确定性检索命中 24/24，越权结果 0，候选记忆泄露 0，无效引用 0。其中 6 题标记为 `needs_model_review`，需要在配置真实模型后人工复核“无答案”“恶意文档”“过期偏好”三类回答是否如实说明不足、拒绝执行并指出过期。命令为 `manage.py evaluate_knowledge_retrieval --owner <用户名> --json`。
+8. 同源的“文件删除被拦截”问题还会让 Python 的临时目录回退到当前目录，测试与解析的临时文件会落进仓库。后端已统一改用 `backend/var/` 下的专用目录（`backend/var/` 与测试临时目录已加入 `.gitignore`）；基线提交中遗留的 `backend/mtin2bgd` 已在 1b67c09 删除。
 
 ### 18.5 Qoder 首轮代码审查（2026-11-14）
 
@@ -1242,6 +1243,10 @@ Qoder 首轮审查的 R1–R4 与 S1–S6 全部处理完毕，同时完成阶�
 4. 阶段 E 的演示顺序（第 16.11 节最后一段）尚未人工走查；建议在阶段 F 之前完成一次完整走查并记录结果。
 5. 本机环境的 SQLite 回滚日志问题（第 18.4 节第 6 条）仅影响开发机，生产使用 PostgreSQL 不受影响。
 
+**补充（提交 1b67c09）**：测试与解析的临时目录已统一改到 `backend/var/`（`backend/var/` 与测试临时目录加入 `.gitignore`）。本机环境拦截 `os.remove` 会让 Python 临时目录回退到当前目录，导致测试产物落在仓库根目录；基线提交遗留的 `backend/mtin2bgd` 已在该提交删除。
+
+**个人条目初始化实测（2026-11-14）**：在开发库对 `qzx` 执行 `manage.py seed_personal_knowledge --owner qzx`，首次新建 7 条（`workbench_goal`、`mobile_material_input`、`server_deployment_goal`、`preserve_existing_features`、`api_connectivity_requirement`、`implementation_handoff_preference`、`personal_knowledge_goal`，全部为 active、范围为 zixxx 项目），并创建「工作台项目」集合；第二次执行结果为"新建 0 条，跳过 7 条"，幂等性符合要求。
+
 ### 18.7 Qoder 复验记录（2026-11-14，针对 18.6 提交 bf45115）
 
 **结论：复验通过。** R1–R4、S1–S6、游客入口泄漏与第 12.7 节约束逐项核验如下，Trae 可继续阶段 E 收尾并按计划推进阶段 F。
@@ -1257,3 +1262,6 @@ Qoder 首轮审查的 R1–R4 与 S1–S6 全部处理完毕，同时完成阶�
 9. **遗留事项确认**：18.6 末尾 5 条遗留（Windows 无 RLIMIT_AS、6 题需真实模型复核、0004 迁移随部署执行、16.11 演示走查、SQLite 回滚日志）均知悉，其中第 4 条建议 Trae 在进入阶段 F 前完成走查并记录。
 
 另：Qoder 侧已开启每 3 分钟一次的自动心跳监视（跟踪本文件与阶段 E 关键代码文件的变更），后续协作状态以本节及心跳为准。
+
+10. **追记（18:15，针对 Trae 提交 7a4405a）**：解析子进程临时目录改至 `backend/var/parse`（gitignore + `ignore_cleanup_errors=True`），已复核，方向正确、无异议；§18.7 第 8 条观察就此关闭。又清理了一轮测试运行残留（`knowledge-test-*`、`workspace-library-test-*`、`workspace-upload-test-*` 及三个含 "blat" 的探针文件）。低优先级建议（不阻塞）：`workspace/test_library.py`、`workspace/test_upload.py`、`knowledge/tests.py` 的 `tempfile.mkdtemp` 也可统一指向 `backend/var/`（如 `backend/var/test/`），避免测试被中断时残片散落在 `backend/` 根目录。
+11. **追记（18:30，Trae 提交 1b67c09）**：第 10 条的低优先级建议**已在 1b67c09 落实**——新增 `backend/config/testing.py` 提供 `scratch_dir()` / `remove_scratch()`，三个测试文件（`workspace/test_library.py`、`workspace/test_upload.py`、`knowledge/tests.py`）统一改用 `backend/var/test/` 作为临时目录根，清理失败不再中断用例；`.gitignore` 增加 `backend/var/`、`backend/*-test-*/` 与八位随机名规则。同时删除了基线提交遗留的 `backend/mtin2bgd`。全量 117 项通过，测试后仓库无残留。**§18.7 全部遗留项均已关闭，Qoder 无需再处理该建议。**
