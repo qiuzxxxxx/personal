@@ -53,6 +53,132 @@ def _sse(event: str, payload: dict) -> str:
     return f"data: {data}\n\n"
 
 
+def _apply_knowledge_scope(request, conversation, scope: dict):
+    """Persist the requested knowledge scope on the conversation.
+
+    The client may only narrow or widen its own conversation; every id is
+    re-checked against the current owner. Omitting the field keeps the scope
+    that was stored earlier.
+    """
+    if not scope:
+        return None
+    from knowledge.models import KnowledgeCollection
+    from workspace.models import Project
+
+    collection_ids = scope.get("collection_ids") or []
+    if collection_ids:
+        owned = set(
+            str(item)
+            for item in KnowledgeCollection.objects.filter(
+                owner=request.user, deleted_at__isnull=True
+            ).values_list("id", flat=True)
+        )
+        for collection_id in collection_ids:
+            if str(collection_id) not in owned:
+                return Response(
+                    {"detail": "知识集合不存在或不属于当前账号。"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+    project = None
+    project_id = scope.get("project_id")
+    if project_id:
+        project = Project.objects.filter(pk=project_id, owner=request.user).first()
+        if project is None:
+            return Response(
+                {"detail": "项目不存在或不属于当前账号。"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    conversation.knowledge_enabled = bool(scope.get("enabled", conversation.knowledge_enabled))
+    conversation.knowledge_scope = str(scope.get("scope") or conversation.knowledge_scope)
+    conversation.knowledge_collection_ids = [str(item) for item in collection_ids]
+    conversation.use_personal_memory = bool(
+        scope.get("use_personal_memory", conversation.use_personal_memory)
+    )
+    conversation.use_workspace = bool(scope.get("use_workspace", conversation.use_workspace))
+    conversation.strict_sources = bool(
+        scope.get("strict_sources", conversation.strict_sources)
+    )
+    conversation.knowledge_project = project
+    conversation.save(
+        update_fields=[
+            "knowledge_enabled",
+            "knowledge_scope",
+            "knowledge_collection_ids",
+            "use_personal_memory",
+            "use_workspace",
+            "strict_sources",
+            "knowledge_project",
+            "updated_at",
+        ]
+    )
+    return None
+
+
+def _build_request_context(request, conversation, query: str):
+    """Build the model context from the owner's own data."""
+    from knowledge.context import build_context
+
+    options = {
+        "use_knowledge": conversation.knowledge_enabled,
+        "scope": conversation.knowledge_scope,
+        "collection_ids": conversation.knowledge_collection_ids or [],
+        "use_personal_memory": conversation.use_personal_memory,
+        "use_workspace": conversation.use_workspace,
+        "project": conversation.knowledge_project,
+    }
+    return build_context(request.user, query, options)
+
+
+def _render_context_text(context) -> str:
+    blocks = [
+        block
+        for block in (context.knowledge_block, context.memory_block, context.workspace_block)
+        if block
+    ]
+    return "\n\n".join(blocks)
+
+
+def _history_floor_epoch(user) -> int:
+    """The oldest context epoch that may still be sent to the model."""
+    from knowledge.memories import current_floor_epoch
+
+    return current_floor_epoch(user)
+
+
+def _save_citations(message, context) -> None:
+    """Bind the sources of this turn to the assistant message."""
+    from knowledge.models import KnowledgeChunk, KnowledgeDocument, MessageCitation
+
+    for source in context.sources:
+        document = None
+        chunk = None
+        if source.source_type == "knowledge" and source.document_id:
+            document = KnowledgeDocument.objects.filter(
+                pk=source.document_id, owner=message.conversation.user
+            ).first()
+            if source.chunk_id:
+                chunk = KnowledgeChunk.objects.filter(
+                    pk=source.chunk_id, document=document
+                ).first()
+        MessageCitation.objects.create(
+            owner=message.conversation.user,
+            message=message,
+            source_id=source.source_id,
+            source_type=source.source_type,
+            document=document,
+            revision=document.current_revision if document else None,
+            chunk=chunk,
+            locator={
+                "heading_path": source.heading_path,
+                "page_start": source.page_start,
+                "page_end": source.page_end,
+            },
+            snapshot_text=source.text[:1000],
+        )
+
+
 @api_view(["GET", "POST"])
 @permission_classes([CanUseAgent])
 def conversations(request):
@@ -337,12 +463,23 @@ def chat(request):
     if not content and not current_attachments:
         return Response({"detail": "请输入消息或选择附件。"}, status=400)
 
+    knowledge_scope = payload.get("knowledge") or {}
+    scope_error = _apply_knowledge_scope(request, conversation, knowledge_scope)
+    if scope_error is not None:
+        return scope_error
+
+    context = _build_request_context(request, conversation, content)
+    context_text = _render_context_text(context)
+
     attachment_refs = [attachment_ref(item) for item in current_attachments]
+    floor_epoch = _history_floor_epoch(request.user)
+    conversation.context_epoch = floor_epoch
     user_message = Message.objects.create(
         conversation=conversation,
         role="user",
         content=content,
         attachments=attachment_refs,
+        context_epoch=floor_epoch,
     )
 
     if not conversation.title or conversation.title == "新对话":
@@ -372,11 +509,30 @@ def chat(request):
         assistant_message = None
         error_message = None
         try:
+            yield _sse(
+                "sources",
+                {
+                    "retrieval": {
+                        "knowledge": conversation.knowledge_enabled,
+                        "scope": conversation.knowledge_scope,
+                        "collection_ids": conversation.knowledge_collection_ids or [],
+                        "use_personal_memory": conversation.use_personal_memory,
+                        "use_workspace": conversation.use_workspace,
+                        "strict_sources": conversation.strict_sources,
+                    },
+                    "sources": [item.as_dict() for item in context.sources],
+                    "warnings": context.warnings,
+                    "context_epoch": conversation.context_epoch,
+                },
+            )
             for delta in stream_completion(
                 api_config,
                 conversation,
                 user_message,
                 current_attachments,
+                context_text=context_text,
+                strict_sources=conversation.strict_sources,
+                history_floor_epoch=_history_floor_epoch(request.user),
             ):
                 if not delta:
                     continue
@@ -386,15 +542,25 @@ def chat(request):
             answer = "".join(parts).strip()
             if not answer:
                 raise LLMError("模型没有返回任何内容，请检查接口与模型名称。")
+            # Re-check the context epoch before saving: a withdrawal during
+            # the stream must not be persisted as a confirmed answer.
+            floor = _history_floor_epoch(request.user)
             assistant_message = Message.objects.create(
                 conversation=conversation,
                 role="assistant",
                 content=answer,
+                knowledge_sources=[item.as_dict() for item in context.sources],
+                context_epoch=floor,
             )
+            _save_citations(assistant_message, context)
             conversation.save(update_fields=["updated_at"])
             yield _sse(
                 "done",
-                {"message": MessageSerializer(assistant_message).data},
+                {
+                    "message": MessageSerializer(assistant_message).data,
+                    "sources": [item.as_dict() for item in context.sources],
+                    "context_epoch": floor,
+                },
             )
         except GeneratorExit:
             raise
@@ -410,6 +576,8 @@ def chat(request):
                     conversation=conversation,
                     role="assistant",
                     content=partial,
+                    knowledge_sources=[item.as_dict() for item in context.sources],
+                    context_epoch=_history_floor_epoch(request.user),
                 )
                 conversation.save(update_fields=["updated_at"])
             yield _sse(

@@ -100,15 +100,32 @@ def build_rich_messages(
     current_message: Message,
     current_attachments: list[AgentAttachment],
     system_prompt: str,
+    context_text: str = "",
+    strict_sources: bool = False,
+    history_floor_epoch: int = 1,
 ) -> tuple[list[RichMessage], str]:
     history = list(
         conversation.messages.order_by("-created_at")[:MAX_HISTORY_MESSAGES]
     )
     history.reverse()
+    # Messages produced before a memory withdrawal are no longer part of the
+    # model context; they stay visible in the interface.
+    if history_floor_epoch > 1:
+        history = [
+            item
+            for item in history
+            if (getattr(item, "context_epoch", 1) or 1) >= history_floor_epoch
+        ]
     all_attachments = _attachment_map(history)
     current_by_id = {str(item.id): item for item in current_attachments}
     current_id = str(current_message.id)
     rich: list[RichMessage] = []
+
+    # Reference material (knowledge chunks, personal memories, workspace
+    # snapshot) is injected as a read-only context block. It carries no
+    # instructions: the model may only cite it.
+    if context_text:
+        rich.append(RichMessage(role="user", text=context_text))
 
     for message in history:
         text = (message.content or "").strip()
@@ -162,6 +179,12 @@ def build_rich_messages(
         total -= len(removed.text)
 
     system = (system_prompt or "").strip() or DEFAULT_SYSTEM_PROMPT
+    if strict_sources:
+        system += (
+            "\n【严格来源模式】回答只能使用本轮提供的资料片段与个人记忆。"
+            "资料不足时必须直接说明缺少哪些信息，不得使用未提供的背景知识作答。"
+            "每个关键结论后都要标注来源编号。"
+        )
     return rich, system[:12_000]
 
 
@@ -450,11 +473,17 @@ def stream_completion(
     conversation: Conversation,
     current_message: Message,
     current_attachments: list[AgentAttachment],
+    context_text: str = "",
+    strict_sources: bool = False,
+    history_floor_epoch: int = 1,
 ) -> Iterator[str]:
     rich, system = build_rich_messages(
         conversation,
         current_message,
         current_attachments,
         str(config.get("system_prompt", "")),
+        context_text=context_text,
+        strict_sources=strict_sources,
+        history_floor_epoch=history_floor_epoch,
     )
     return _provider_stream(config, rich, system, probe=False)

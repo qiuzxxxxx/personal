@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "chat",
     "transfer",
     "workspace",
+    "knowledge",
 ]
 
 MIDDLEWARE = [

@@ -23,6 +23,22 @@ class Conversation(models.Model):
     )
     session_key = models.CharField(max_length=80, blank=True, db_index=True)
     title = models.CharField(max_length=120, default="新对话")
+    # Knowledge scope of this conversation. All switches default to off so old
+    # conversations keep their previous behaviour.
+    knowledge_enabled = models.BooleanField(default=False)
+    knowledge_scope = models.CharField(max_length=20, default="all")
+    knowledge_collection_ids = models.JSONField(default=list, blank=True)
+    use_personal_memory = models.BooleanField(default=False)
+    use_workspace = models.BooleanField(default=False)
+    strict_sources = models.BooleanField(default=False)
+    knowledge_project = models.ForeignKey(
+        "workspace.Project",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="agent_conversations",
+    )
+    context_epoch = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -73,6 +89,9 @@ class Message(models.Model):
     role = models.CharField(max_length=16, choices=ROLE_CHOICES)
     content = models.TextField(blank=True, default="")
     attachments = models.JSONField(default=list, blank=True)
+    # Metadata about the knowledge / memory context used for this turn.
+    knowledge_sources = models.JSONField(default=list, blank=True)
+    context_epoch = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
