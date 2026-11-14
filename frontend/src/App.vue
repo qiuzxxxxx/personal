@@ -27,6 +27,7 @@ const cachedViews = [
   "TasksView",
   "ProjectsView",
   "JournalView",
+  "LibraryView",
   "AgentChatView",
   "DirectChatView",
   "TransferStation",

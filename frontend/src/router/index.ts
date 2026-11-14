@@ -39,6 +39,12 @@ const router = createRouter({
       meta: { title: "每日记录", requiresAuth: true },
     },
     {
+      path: "/library",
+      name: "library",
+      component: () => import("@/views/LibraryView.vue"),
+      meta: { title: "私人资料库", requiresAuth: true },
+    },
+    {
       path: "/agent",
       name: "agent",
       component: () => import("@/views/AgentChatView.vue"),

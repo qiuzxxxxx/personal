@@ -141,6 +141,95 @@ class Task(VersionedModel):
         return self.title
 
 
+class Folder(VersionedModel):
+    """Single level folder inside the private material library."""
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="library_folders",
+    )
+    name = models.CharField(max_length=120)
+    position = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ["position", "created_at"]
+        indexes = [models.Index(fields=["owner", "deleted_at"])]
+
+    def __str__(self) -> str:  # pragma: no cover
+        return self.name
+
+
+class Material(VersionedModel):
+    """A private file stored for the owner."""
+
+    SOURCE_CHOICES = [
+        ("desktop", "电脑上传"),
+        ("qr", "手机扫码"),
+        ("transfer_copy", "中转站副本"),
+    ]
+    STATE_CHOICES = [
+        ("pending", "接收中"),
+        ("ready", "可用"),
+        ("failed", "失败"),
+        ("deleting", "待永久删除"),
+    ]
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="materials",
+    )
+    folder = models.ForeignKey(
+        Folder,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="materials",
+    )
+    storage_key = models.FileField(upload_to="library/%Y/%m/")
+    original_name = models.CharField(max_length=255)
+    detected_mime = models.CharField(max_length=100, default="application/octet-stream")
+    size_bytes = models.BigIntegerField(default=0)
+    sha256 = models.CharField(max_length=64, blank=True, default="")
+    remark = models.CharField(max_length=500, blank=True, default="")
+    source = models.CharField(max_length=16, choices=SOURCE_CHOICES, default="desktop")
+    state = models.CharField(max_length=16, choices=STATE_CHOICES, default="ready")
+    tags = models.ManyToManyField(Tag, related_name="materials", blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["owner", "deleted_at", "state"]),
+            models.Index(fields=["owner", "folder"]),
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover
+        return self.original_name
+
+
+class TaskMaterial(VersionedModel):
+    """Attachment between a task and a material of the same owner."""
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name="task_materials")
+    material = models.ForeignKey(
+        Material, on_delete=models.CASCADE, related_name="task_materials"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["task", "material"],
+                name="workspace_taskmaterial_unique",
+            )
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"{self.task_id}:{self.material_id}"
+
+
 class DailyEntry(VersionedModel):
     """One free form note per owner per calendar day."""
 

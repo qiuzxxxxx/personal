@@ -5,6 +5,8 @@ written into models directly.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from rest_framework import serializers
 
 from .models import (
@@ -12,9 +14,12 @@ from .models import (
     TASK_PRIORITY,
     TASK_STATUS,
     DailyEntry,
+    Folder,
+    Material,
     Project,
     Tag,
     Task,
+    TaskMaterial,
 )
 
 STATUS_CHOICES = [choice[0] for choice in TASK_STATUS]
@@ -87,6 +92,84 @@ class DailyEntrySerializer(serializers.ModelSerializer):
     class Meta:
         model = DailyEntry
         fields = ["id", "date", "content", "version", "created_at", "updated_at"]
+
+
+class FolderSerializer(serializers.ModelSerializer):
+    material_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Folder
+        fields = [
+            "id",
+            "name",
+            "position",
+            "version",
+            "material_count",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_material_count(self, obj: Folder) -> int:
+        return getattr(obj, "material_count", 0)
+
+
+class MaterialSerializer(serializers.ModelSerializer):
+    tags = TagSerializer(many=True, read_only=True)
+    extension = serializers.SerializerMethodField()
+    is_previewable = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
+    preview_url = serializers.SerializerMethodField()
+    folder_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Material
+        fields = [
+            "id",
+            "original_name",
+            "extension",
+            "detected_mime",
+            "size_bytes",
+            "sha256",
+            "remark",
+            "source",
+            "state",
+            "folder",
+            "folder_name",
+            "tags",
+            "version",
+            "is_previewable",
+            "download_url",
+            "preview_url",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_extension(self, obj: Material) -> str:
+        return Path(obj.original_name).suffix.lower().lstrip(".")
+
+    def get_is_previewable(self, obj: Material) -> bool:
+        from .library import is_previewable
+
+        return is_previewable(obj.original_name)
+
+    def get_download_url(self, obj: Material) -> str:
+        return f"/api/library/materials/{obj.id}/download/"
+
+    def get_preview_url(self, obj: Material) -> str:
+        if not self.get_is_previewable(obj):
+            return ""
+        return f"/api/library/materials/{obj.id}/download/?inline=1"
+
+    def get_folder_name(self, obj: Material) -> str:
+        return obj.folder.name if obj.folder_id else ""
+
+
+class TaskMaterialSerializer(serializers.ModelSerializer):
+    material = MaterialSerializer(read_only=True)
+
+    class Meta:
+        model = TaskMaterial
+        fields = ["id", "task", "material", "created_at"]
 
 
 class TaskWriteSerializer(serializers.Serializer):

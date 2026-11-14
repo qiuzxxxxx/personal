@@ -151,3 +151,112 @@ export async function saveJournal(
   const { data } = await api.put<WorkspaceJournal>(`/journal/${date}/`, payload);
   return data;
 }
+
+export interface LibraryFolder {
+  id: string;
+  name: string;
+  position: number;
+  version: number;
+  material_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LibraryMaterial {
+  id: string;
+  original_name: string;
+  extension: string;
+  detected_mime: string;
+  size_bytes: number;
+  sha256: string;
+  remark: string;
+  source: "desktop" | "qr" | "transfer_copy";
+  state: string;
+  folder: string | null;
+  folder_name: string;
+  tags: WorkspaceTag[];
+  version: number;
+  is_previewable: boolean;
+  download_url: string;
+  preview_url: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchFolders(): Promise<LibraryFolder[]> {
+  const { data } = await api.get<PagedResult<LibraryFolder>>("/library/folders/", {
+    params: { page_size: 100 },
+  });
+  return data.results;
+}
+
+export async function createFolder(name: string): Promise<LibraryFolder> {
+  const { data } = await api.post<LibraryFolder>("/library/folders/", { name });
+  return data;
+}
+
+export async function deleteFolder(id: string): Promise<LibraryFolder> {
+  const { data } = await api.delete<LibraryFolder>(`/library/folders/${id}/`);
+  return data;
+}
+
+export async function fetchMaterials(query: {
+  folder?: string;
+  tag?: string;
+  type?: string;
+  q?: string;
+  deleted?: boolean;
+  created_after?: string;
+  created_before?: string;
+  page?: number;
+  page_size?: number;
+} = {}): Promise<PagedResult<LibraryMaterial>> {
+  const params: Record<string, unknown> = {};
+  Object.entries(query).forEach(([key, value]) => {
+    if (value) params[key] = value;
+  });
+  const { data } = await api.get<PagedResult<LibraryMaterial>>("/library/materials/", {
+    params,
+  });
+  return data;
+}
+
+export async function uploadMaterial(
+  file: File,
+  options: { folder?: string; remark?: string; tags?: string[]; task?: string } = {},
+): Promise<LibraryMaterial> {
+  const form = new FormData();
+  form.append("file", file);
+  if (options.folder) form.append("folder", options.folder);
+  if (options.remark) form.append("remark", options.remark);
+  if (options.tags?.length) form.append("tags", options.tags.join(","));
+  if (options.task) form.append("task", options.task);
+  const { data } = await api.post<LibraryMaterial>("/library/materials/", form);
+  if (options.task) {
+    await api.post(`/tasks/${options.task}/materials/`, { material: data.id });
+  }
+  return data;
+}
+
+export async function deleteMaterial(id: string): Promise<LibraryMaterial> {
+  const { data } = await api.delete<LibraryMaterial>(`/library/materials/${id}/`);
+  return data;
+}
+
+export async function restoreMaterial(id: string): Promise<LibraryMaterial> {
+  const { data } = await api.post<LibraryMaterial>(`/library/materials/${id}/restore/`);
+  return data;
+}
+
+export async function downloadMaterial(material: LibraryMaterial): Promise<void> {
+  const response = await api.get<Blob>(material.download_url, { responseType: "blob" });
+  const url = URL.createObjectURL(response.data);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = material.original_name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
