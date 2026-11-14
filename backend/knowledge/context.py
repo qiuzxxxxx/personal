@@ -73,16 +73,18 @@ class ChatContext:
 
 
 def _trim(text: str, budget: int) -> str:
-    """Trim a block to an approximate token budget."""
+    """Trim a block to an approximate character budget.
+
+    The budget is counted in characters, which is close enough for the
+    Chinese-first content this module produces.
+    """
     if not text:
         return ""
-    # Chinese characters roughly equal one token; latin text is cheaper.
     limit = max(budget, 0)
     used = 0
     output: list[str] = []
     for line in text.splitlines():
-        cost = sum(1 if "\u4e00" <= ch <= "\u9fff" else 1 for ch in line)
-        used += cost
+        used += len(line)
         if used > limit:
             output.append("…（已按预算截断）")
             break

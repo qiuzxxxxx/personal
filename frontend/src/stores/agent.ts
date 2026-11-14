@@ -5,7 +5,7 @@ import {
   getConversation,
   listConversations,
 } from "@/api/agent";
-import type { AgentMessage, ConversationSummary } from "@/types";
+import type { AgentMessage, ConversationSummary, KnowledgeScope } from "@/types";
 
 export const useAgentStore = defineStore("agent", () => {
   const conversations = ref<ConversationSummary[]>([]);
@@ -15,6 +15,16 @@ export const useAgentStore = defineStore("agent", () => {
   const loadingConversations = ref(false);
   const loadingMessages = ref(false);
   const loaded = ref(false);
+  // 知识范围开关随会话保存，切换会话时随之恢复。
+  const knowledgeScope = ref<KnowledgeScope>({
+    enabled: false,
+    scope: "all",
+    collection_ids: [],
+    use_personal_memory: false,
+    project_id: null,
+    use_workspace: false,
+    strict_sources: false,
+  });
 
   const recentConversations = computed(() => conversations.value.slice(0, 30));
 
@@ -37,6 +47,15 @@ export const useAgentStore = defineStore("agent", () => {
       activeId.value = detail.id;
       activeTitle.value = detail.title;
       messages.value = detail.messages;
+      knowledgeScope.value = {
+        enabled: Boolean(detail.knowledge_enabled),
+        scope: detail.knowledge_scope === "collections" ? "collections" : "all",
+        collection_ids: detail.knowledge_collection_ids || [],
+        use_personal_memory: Boolean(detail.use_personal_memory),
+        project_id: detail.knowledge_project ?? null,
+        use_workspace: Boolean(detail.use_workspace),
+        strict_sources: Boolean(detail.strict_sources),
+      };
     } finally {
       loadingMessages.value = false;
     }
@@ -46,6 +65,15 @@ export const useAgentStore = defineStore("agent", () => {
     activeId.value = null;
     activeTitle.value = "新对话";
     messages.value = [];
+    knowledgeScope.value = {
+      enabled: false,
+      scope: "all",
+      collection_ids: [],
+      use_personal_memory: false,
+      project_id: null,
+      use_workspace: false,
+      strict_sources: false,
+    };
   }
 
   function applyMeta(conversationId: string, title: string): void {
@@ -109,6 +137,15 @@ export const useAgentStore = defineStore("agent", () => {
     activeTitle.value = "新对话";
     messages.value = [];
     loaded.value = false;
+    knowledgeScope.value = {
+      enabled: false,
+      scope: "all",
+      collection_ids: [],
+      use_personal_memory: false,
+      project_id: null,
+      use_workspace: false,
+      strict_sources: false,
+    };
   }
 
   return {
@@ -117,6 +154,7 @@ export const useAgentStore = defineStore("agent", () => {
     activeId,
     activeTitle,
     messages,
+    knowledgeScope,
     loadingConversations,
     loadingMessages,
     loadConversations,

@@ -45,6 +45,18 @@ const router = createRouter({
       meta: { title: "私人资料库", requiresAuth: true },
     },
     {
+      path: "/knowledge",
+      name: "knowledge",
+      component: () => import("@/views/KnowledgeView.vue"),
+      meta: { title: "个人知识库", requiresAuth: true },
+    },
+    {
+      path: "/knowledge/memories",
+      name: "knowledge-memories",
+      component: () => import("@/views/KnowledgeMemoriesView.vue"),
+      meta: { title: "个人记忆", requiresAuth: true },
+    },
+    {
       path: "/upload",
       name: "phone-upload",
       component: () => import("@/views/MobileUploadView.vue"),
@@ -82,6 +94,19 @@ const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
 });
 
+// 游客 yk 只使用免密中转站，不能进入工作台或知识库。
+const guestBlockedPaths = [
+  "/agent",
+  "/chat",
+  "/today",
+  "/tasks",
+  "/projects",
+  "/journal",
+  "/library",
+  "/knowledge",
+  "/knowledge/memories",
+];
+
 router.beforeEach(async (to) => {
   const auth = useAuthStore();
   if (!auth.initialized) {
@@ -101,7 +126,7 @@ router.beforeEach(async (to) => {
   if (
     auth.isAuthenticated &&
     auth.user?.username === "yk" &&
-    (to.path === "/agent" || to.path === "/chat")
+    guestBlockedPaths.some((path) => to.path === path || to.path.startsWith(`${path}/`))
   ) {
     return { path: "/transfer" };
   }

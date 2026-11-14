@@ -39,6 +39,11 @@ class Conversation(models.Model):
         related_name="agent_conversations",
     )
     context_epoch = models.PositiveIntegerField(default=1)
+    # Set once reference material or personal memories were injected into
+    # this conversation. Only such conversations are affected when a memory
+    # is withdrawn; conversations that never used the knowledge base keep
+    # their full history.
+    context_injected = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -5,6 +5,7 @@ clients can never choose it, and a guest account (yk) has no access.
 """
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, F, Q
 from django.utils import timezone
@@ -14,7 +15,7 @@ from rest_framework.response import Response
 from agent.permissions import CanUseAgent
 from config.http import BadRequest, error, no_store, paginate, parse_int
 
-from agent.models import Message
+from agent.models import Conversation, Message
 
 from workspace.models import DailyEntry, Material, Project
 
@@ -683,9 +684,23 @@ def write_intent(request):
                 "payload": existing.payload,
             }
         )
+
+    # The conversation must be a real conversation of the current account.
+    conversation = None
+    raw_conversation = payload.get("conversation")
+    if raw_conversation:
+        try:
+            conversation = Conversation.objects.filter(
+                pk=raw_conversation, user=request.user
+            ).first()
+        except (ValueError, TypeError, DjangoValidationError):
+            return error("conversation 不是合法的会话标识。", 400, code="invalid_payload")
+        if conversation is None:
+            return error("会话不存在或不属于当前账号。", 400, code="invalid_conversation")
+
     intent = KnowledgeWriteIntent.objects.create(
         owner=request.user,
-        conversation=payload.get("conversation") or None,
+        conversation=conversation,
         target=target,
         payload=payload.get("payload") if isinstance(payload.get("payload"), dict) else {},
         expires_at=timezone.now() + timezone.timedelta(minutes=10),
@@ -710,6 +725,21 @@ def citation_detail(request, citation_id):
     ).select_related("document", "revision", "chunk").first()
     if citation is None:
         return error("引用不存在或不属于当前账号。", 404, code="not_found")
+    if citation.source_type == "workspace":
+        # A task citation is a snapshot of the moment the question was asked.
+        return no_store(
+            Response(
+                {
+                    "id": str(citation.id),
+                    "status": "snapshot",
+                    "source_id": citation.source_id,
+                    "source_type": citation.source_type,
+                    "title": citation.locator.get("title", ""),
+                    "text": citation.snapshot_text,
+                    "detail": "这是查询当时的任务快照，任务当前状态请以工作台为准。",
+                }
+            )
+        )
     document = citation.document
     if document is None or document.deleted_at is not None:
         return no_store(
@@ -755,7 +785,7 @@ def export_view(request):
     """Export the owner's notes, memories and source list."""
     documents = KnowledgeDocument.objects.filter(
         owner=request.user, deleted_at__isnull=True
-    ).select_related("collection")
+    ).select_related("collection", "current_revision")
     payload = {
         "exported_at": timezone.now().isoformat(),
         "context_epoch": current_epoch(request.user),
@@ -773,7 +803,9 @@ def export_view(request):
                 "source_type": item.source_type,
                 "ai_enabled": item.ai_enabled,
                 "index_status": item.index_status,
-                "body": item.manual_body,
+                # Imported sources keep their body in the parsed revision.
+                "body": item.manual_body
+                or (item.current_revision.body if item.current_revision_id else ""),
                 "updated_at": item.updated_at.isoformat(),
             }
             for item in documents

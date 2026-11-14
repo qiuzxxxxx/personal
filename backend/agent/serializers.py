@@ -45,7 +45,21 @@ class AgentAttachmentSerializer(serializers.ModelSerializer):
         ]
 
 
+class MessageCitationSerializer(serializers.Serializer):
+    id = serializers.UUIDField(read_only=True)
+    source_id = serializers.CharField(read_only=True)
+    source_type = serializers.CharField(read_only=True)
+    title = serializers.SerializerMethodField()
+    document_id = serializers.UUIDField(read_only=True, allow_null=True)
+    revision_no = serializers.IntegerField(read_only=True, default=0)
+
+    def get_title(self, obj) -> str:
+        return obj.document.title if obj.document_id else ""
+
+
 class MessageSerializer(serializers.ModelSerializer):
+    citations = serializers.SerializerMethodField()
+
     class Meta:
         model = Message
         fields = [
@@ -54,8 +68,15 @@ class MessageSerializer(serializers.ModelSerializer):
             "content",
             "attachments",
             "knowledge_sources",
+            "citations",
             "created_at",
         ]
+
+    def get_citations(self, obj):
+        citations = list(obj.citations.all())
+        if not citations:
+            return []
+        return MessageCitationSerializer(citations, many=True).data
 
 
 class ConversationSummarySerializer(serializers.ModelSerializer):

@@ -95,6 +95,15 @@ def _markdown_segments(text: str) -> list[Segment]:
             stack.append(title)
             heading = title
             start = offset + len(line) + 1
+            # The heading itself is searchable content, not only a path.
+            segments.append(
+                Segment(
+                    text=title,
+                    heading_path=" > ".join(stack),
+                    char_start=offset,
+                    char_end=offset + len(title),
+                )
+            )
             continue
         if not stripped:
             flush()

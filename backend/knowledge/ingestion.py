@@ -24,6 +24,7 @@ PIPELINE_VERSION = "v1"
 CHUNK_TARGET_CHARS = 600
 CHUNK_MIN_CHARS = 200
 CHUNK_OVERLAP_CHARS = 80
+CHUNK_WRITE_BATCH = 200
 MAX_CHUNKS_PER_OWNER = 10_000
 
 
@@ -46,7 +47,14 @@ def estimate_tokens(text: str) -> int:
 
 
 def chunk_segments(segments) -> list[dict]:
-    """Group parsed segments into overlapping chunks."""
+    """Group parsed segments into overlapping chunks.
+
+    Every effective source character must end up in at least one chunk: the
+    tail of a long paragraph is kept even when it is shorter than the
+    minimum size, otherwise the end of a document would be unsearchable.
+    Neighbouring chunks share a real overlap so a query whose terms sit on
+    a chunk boundary still matches.
+    """
     chunks: list[dict] = []
     buffer: list[str] = []
     buffer_len = 0
@@ -55,9 +63,13 @@ def chunk_segments(segments) -> list[dict]:
     page_end: int | None = None
     char_start = 0
     char_end = 0
+    # Text carried from the previous chunk so the next one starts with it.
+    overlap_text = ""
+    overlap_from = 0
 
-    def flush() -> None:
-        nonlocal buffer, buffer_len
+    def flush(keep_overlap: bool = False) -> None:
+        """Emit the buffered text; optionally carry its tail to the next chunk."""
+        nonlocal buffer, buffer_len, overlap_text, overlap_from
         body = "\n".join(buffer).strip()
         if body:
             chunks.append(
@@ -70,6 +82,11 @@ def chunk_segments(segments) -> list[dict]:
                     "char_end": char_end,
                 }
             )
+            if keep_overlap and len(body) > CHUNK_OVERLAP_CHARS:
+                overlap_text = body[-CHUNK_OVERLAP_CHARS:]
+                overlap_from = max(char_end - len(overlap_text), 0)
+            else:
+                overlap_text = ""
         buffer = []
         buffer_len = 0
 
@@ -77,43 +94,70 @@ def chunk_segments(segments) -> list[dict]:
         text = segment.text.strip()
         if not text:
             continue
-        if buffer_len and buffer_len + len(text) > CHUNK_TARGET_CHARS:
+        if len(text) > CHUNK_TARGET_CHARS:
+            # A single oversized paragraph is cut on its own. The walk below
+            # always ends exactly at the end of the paragraph, and a trailing
+            # piece shorter than the minimum size is merged into the previous
+            # chunk instead of being dropped.
             flush()
-            if len(text) > CHUNK_TARGET_CHARS:
-                # Long paragraphs are split further with a small overlap.
-                step = max(CHUNK_TARGET_CHARS - CHUNK_OVERLAP_CHARS, 1)
-                for offset in range(0, len(text), step):
-                    piece = text[offset : offset + CHUNK_TARGET_CHARS]
-                    if len(piece.strip()) < CHUNK_MIN_CHARS and offset:
-                        break
-                    chunks.append(
-                        {
-                            "text": piece.strip(),
-                            "heading_path": segment.heading_path,
-                            "page_start": segment.page_start,
-                            "page_end": segment.page_end,
-                            "char_start": segment.char_start + offset,
-                            "char_end": segment.char_start + offset + len(piece),
-                        }
-                    )
-                heading = segment.heading_path
-                page_start = segment.page_start
-                page_end = segment.page_end
-                continue
+            cuts: list[tuple[int, int]] = []
+            start = 0
+            while start < len(text):
+                end = min(start + CHUNK_TARGET_CHARS, len(text))
+                cuts.append((start, end))
+                if end >= len(text):
+                    break
+                start = end - CHUNK_OVERLAP_CHARS
+            emitted_end = 0
+            for index, (cut_start, cut_end) in enumerate(cuts):
+                body = text[cut_start:cut_end].strip()
+                if not body:
+                    continue
+                if index == len(cuts) - 1 and len(body) < CHUNK_MIN_CHARS and chunks:
+                    # Merge only the part that the previous chunk does not
+                    # already contain, so no character is duplicated or lost.
+                    previous = chunks[-1]
+                    tail = text[emitted_end:]
+                    if tail.strip():
+                        previous["text"] = f"{previous['text']}\n{tail.strip()}"
+                    previous["char_end"] = segment.char_start + len(text)
+                    emitted_end = len(text)
+                    break
+                chunks.append(
+                    {
+                        "text": body,
+                        "heading_path": segment.heading_path,
+                        "page_start": segment.page_start,
+                        "page_end": segment.page_end,
+                        "char_start": segment.char_start + cut_start,
+                        "char_end": segment.char_start + cut_end,
+                    }
+                )
+                emitted_end = cut_end
+            # The next chunk starts with the tail of the last one.
+            if chunks:
+                last_text = chunks[-1]["text"]
+                if len(last_text) > CHUNK_OVERLAP_CHARS:
+                    overlap_text = last_text[-CHUNK_OVERLAP_CHARS:]
+                    overlap_from = chunks[-1]["char_end"] - len(overlap_text)
+            continue
+        if buffer_len and buffer_len + len(text) > CHUNK_TARGET_CHARS:
+            flush(keep_overlap=True)
         if not buffer:
+            # Start a new chunk; the overlap tail becomes its first part.
             heading = segment.heading_path
             page_start = segment.page_start
             page_end = segment.page_end
-            char_start = segment.char_start
+            char_start = overlap_from if overlap_text else segment.char_start
+            if overlap_text:
+                buffer.append(overlap_text)
+                buffer_len = len(overlap_text)
+            overlap_text = ""
         buffer.append(text)
         buffer_len += len(text) + 1
         char_end = segment.char_end
         if buffer_len >= CHUNK_TARGET_CHARS:
-            flush()
-            # Keep an overlap tail for the next chunk.
-            tail = buffer[-1][-CHUNK_OVERLAP_CHARS:] if buffer else ""
-            buffer = [tail] if tail else []
-            buffer_len = len(tail)
+            flush(keep_overlap=True)
     flush()
     return chunks
 
@@ -198,25 +242,29 @@ def replace_chunks(document: KnowledgeDocument, revision: KnowledgeRevision, chu
             f"分段数量超过每账号 {MAX_CHUNKS_PER_OWNER} 的上限。", code="quota_exceeded"
         )
     KnowledgeChunk.objects.filter(revision=revision).delete()
-    KnowledgeChunk.objects.bulk_create(
-        [
-            KnowledgeChunk(
-                owner=owner,
-                document=document,
-                revision=revision,
-                ordinal=index,
-                text=item["text"],
-                content_hash=content_hash(item["text"]),
-                heading_path=item["heading_path"][:300],
-                page_start=item["page_start"],
-                page_end=item["page_end"],
-                char_start=item["char_start"],
-                char_end=item["char_end"],
-                token_estimate=estimate_tokens(item["text"]),
-            )
-            for index, item in enumerate(chunks)
-        ]
-    )
+    # Section 12.7: write in batches so a large document never creates one
+    # huge statement.
+    for start in range(0, len(chunks), CHUNK_WRITE_BATCH):
+        batch = chunks[start : start + CHUNK_WRITE_BATCH]
+        KnowledgeChunk.objects.bulk_create(
+            [
+                KnowledgeChunk(
+                    owner=owner,
+                    document=document,
+                    revision=revision,
+                    ordinal=start + index,
+                    text=item["text"],
+                    content_hash=content_hash(item["text"]),
+                    heading_path=item["heading_path"][:300],
+                    page_start=item["page_start"],
+                    page_end=item["page_end"],
+                    char_start=item["char_start"],
+                    char_end=item["char_end"],
+                    token_estimate=estimate_tokens(item["text"]),
+                )
+                for index, item in enumerate(batch)
+            ]
+        )
     return len(chunks)
 
 

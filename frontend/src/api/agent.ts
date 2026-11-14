@@ -64,6 +64,7 @@ interface StreamChatPayload {
   message: string;
   attachment_ids: string[];
   api_config: Record<string, unknown>;
+  knowledge?: Record<string, unknown>;
 }
 
 export interface StreamHandlers {

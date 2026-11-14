@@ -23,16 +23,18 @@ import BrandMark from "@/components/BrandMark.vue";
 import MarkdownRenderer from "@/components/MarkdownRenderer.vue";
 import MultimodalInput from "@/components/MultimodalInput.vue";
 import ApiConfigModal from "@/components/ApiConfigModal.vue";
+import KnowledgeScopeBar from "@/components/KnowledgeScopeBar.vue";
 import { useAgentStore } from "@/stores/agent";
 import { useAuthStore } from "@/stores/auth";
 import { useConfigStore } from "@/stores/config";
 import { useToastStore } from "@/stores/toast";
+import { useKnowledgeStore } from "@/stores/knowledge";
 import { uploadAgentAttachment, streamAgentChat } from "@/api/agent";
 import { extractApiError } from "@/api/client";
 import { copyText } from "@/lib/markdown";
 import { formatTime } from "@/lib/format";
 import { providerLabel } from "@/lib/providers";
-import type { AgentMessage, AgentStreamEvent } from "@/types";
+import type { AgentMessage, AgentStreamEvent, KnowledgeScope, KnowledgeSourceRef } from "@/types";
 
 interface Suggestion {
   icon: Component;
@@ -57,6 +59,7 @@ const auth = useAuthStore();
 const agent = useAgentStore();
 const configStore = useConfigStore();
 const toast = useToastStore();
+const knowledge = useKnowledgeStore();
 
 const scrollRef = ref<HTMLElement | null>(null);
 const composerRef = ref<ComposerExpose | null>(null);
@@ -66,6 +69,16 @@ const uploadingLabel = ref("");
 const copiedId = ref("");
 const streamController = ref<AbortController | null>(null);
 const disposed = ref(false);
+
+// 知识范围开关：知识库、个人记忆、当前工作台。默认全部关闭，状态保存在会话上。
+const knowledgeScope = computed({
+  get: () => agent.knowledgeScope,
+  set: (value: KnowledgeScope) => {
+    agent.knowledgeScope = value;
+  },
+});
+const lastSources = ref<KnowledgeSourceRef[]>([]);
+const lastWarnings = ref<string[]>([]);
 let cancelRequested = false;
 let scrollFrame = 0;
 
@@ -183,6 +196,11 @@ onMounted(async () => {
   } catch {
     // History is optional; the composer remains usable.
   }
+  try {
+    await knowledge.loadCollections();
+  } catch {
+    // The knowledge panel stays usable without the collection list.
+  }
   if (agent.activeId && !route.query.c) {
     router.replace({ name: "agent", query: { c: agent.activeId } });
   }
@@ -237,6 +255,11 @@ function handleStreamEvent(event: AgentStreamEvent, assistant: AgentMessage, use
     if (route.query.c !== event.conversation_id) {
       router.replace({ name: "agent", query: { c: event.conversation_id } });
     }
+    return;
+  }
+  if (event.type === "sources") {
+    lastSources.value = event.sources;
+    lastWarnings.value = event.warnings;
     return;
   }
   if (event.type === "delta") {
@@ -345,6 +368,15 @@ async function handleSend(payload: { text: string; files: File[] }): Promise<voi
           model: configStore.config.model,
           system_prompt: configStore.config.system_prompt,
           use_saved: true,
+        },
+        knowledge: {
+          enabled: knowledgeScope.value.enabled,
+          scope: knowledgeScope.value.scope,
+          collection_ids: knowledgeScope.value.collection_ids,
+          use_personal_memory: knowledgeScope.value.use_personal_memory,
+          project_id: knowledgeScope.value.project_id,
+          use_workspace: knowledgeScope.value.use_workspace,
+          strict_sources: knowledgeScope.value.strict_sources,
         },
       },
       {
@@ -614,6 +646,24 @@ function formatMessageTime(value: string): string {
                     </div>
                   </div>
 
+                  <div
+                    v-if="message.knowledge_sources?.length"
+                    class="mt-2.5 flex flex-wrap items-center gap-1.5"
+                  >
+                    <span
+                      v-for="source in message.knowledge_sources"
+                      :key="source.source_id"
+                      class="inline-flex max-w-[260px] items-center gap-1 rounded-lg border border-slate-200/80 bg-white/80 px-2 py-1 text-[10.5px] text-ink-500"
+                      :title="source.text"
+                    >
+                      <span class="font-mono text-accent-600">{{ source.source_id }}</span>
+                      <span class="truncate">{{ source.title }}</span>
+                      <span v-if="source.page_start" class="shrink-0 text-ink-300">
+                        第 {{ source.page_start }} 页
+                      </span>
+                    </span>
+                  </div>
+
                   <div v-if="!message.streaming && message.content" class="mt-2.5 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
                     <button
                       type="button"
@@ -682,6 +732,15 @@ function formatMessageTime(value: string): string {
 
     <div class="composer-area relative z-20 shrink-0">
       <div class="mx-auto w-full max-w-[860px] px-3 pb-3 sm:px-7 sm:pb-5">
+        <div class="mb-2 flex flex-wrap items-center gap-2">
+          <KnowledgeScopeBar :scope="knowledgeScope" @change="knowledgeScope = $event" />
+          <div
+            v-if="lastWarnings.length"
+            class="text-[11px] text-amber-600"
+          >
+            {{ lastWarnings.join(" ") }}
+          </div>
+        </div>
         <MultimodalInput
           ref="composerRef"
           :busy="sending"

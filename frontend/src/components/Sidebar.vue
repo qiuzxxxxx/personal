@@ -20,6 +20,8 @@ import {
   FolderKanban,
   NotebookPen,
   FolderOpen,
+  BookOpen,
+  Brain,
 } from "lucide-vue-next";
 import BrandMark from "@/components/BrandMark.vue";
 import { useUiStore } from "@/stores/ui";
@@ -43,20 +45,21 @@ const navItems = [
   { path: "/projects", label: "项目", caption: "任务归类", icon: FolderKanban, adminOnly: false },
   { path: "/journal", label: "记录", caption: "每日记录", icon: NotebookPen, adminOnly: false },
   { path: "/library", label: "资料", caption: "私人资料库", icon: FolderOpen, adminOnly: false },
+  { path: "/knowledge", label: "知识库", caption: "笔记与可检索资料", icon: BookOpen, adminOnly: false },
+  { path: "/knowledge/memories", label: "个人记忆", caption: "偏好与长期事实", icon: Brain, adminOnly: false },
   { path: "/agent", label: "AI 对话", caption: "多模态智能助手", icon: Sparkles, adminOnly: false },
   { path: "/chat", label: "双人密聊", caption: "qzx ↔ sqx", icon: MessagesSquare, adminOnly: false },
   { path: "/transfer", label: "文件中转站", caption: "免密上传 · 可见性控制", icon: HardDriveUpload, adminOnly: false },
   { path: "/accounts", label: "账号管理", caption: "改密 · 日志 · 仅管理员", icon: UserCog, adminOnly: true },
 ];
 
+// 游客 yk 只使用免密中转站，工作台与知识库入口全部隐藏。
+const guestOnlyPaths = ["/agent", "/chat", "/today", "/tasks", "/projects", "/journal", "/library", "/knowledge", "/knowledge/memories"];
+
 const visibleNavItems = computed(() =>
   navItems.filter((item) => {
     if (item.adminOnly && !auth.isAdmin) return false;
-    // 游客 yk 与 AI 对话、双人密聊完全隔离，入口一并隐藏。
-    if (
-      auth.user?.username === "yk" &&
-      (item.path === "/agent" || item.path === "/chat")
-    ) {
+    if (auth.user?.username === "yk" && guestOnlyPaths.includes(item.path)) {
       return false;
     }
     return true;

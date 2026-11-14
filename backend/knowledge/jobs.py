@@ -3,65 +3,89 @@
 Jobs live in the database with a lease and a claim token, so an interrupted
 worker never leaves a document half-indexed and a duplicate claim cannot
 overwrite a newer result.
+
+Parsing runs in a separate process with a memory limit and a hard timeout
+(section 12.7): a pathological document must never exhaust the worker.
 """
 from __future__ import annotations
 
+import base64
+import json
 import logging
+import os
+import subprocess
+import sys
+import tempfile
 from datetime import timedelta
+from pathlib import Path
 
 from django.db import transaction
 from django.utils import timezone
 
 from workspace.models import DailyEntry, Material
-from workspace.library import extension_of
 
 from .ingestion import chunk_segments, content_hash, enqueue_job, replace_chunks
-from .models import KnowledgeDocument, KnowledgeIndexJob, KnowledgeRevision
-from .parsing import KnowledgeParseError, parse_document
+from .models import KnowledgeChunk, KnowledgeDocument, KnowledgeIndexJob, KnowledgeRevision
+from .parsing import KnowledgeParseError, Segment
 
 logger = logging.getLogger(__name__)
 
 JOB_LEASE_SECONDS = 120
 MAX_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = 60
+# Section 12.7: the parse subprocess may not use more than 450 MiB and must
+# finish within 120 seconds.
+PARSE_MEMORY_LIMIT_BYTES = 450 * 1024 * 1024
+PARSE_TIMEOUT_SECONDS = 120
 
 
 def claim_next_job(lease_seconds: int = JOB_LEASE_SECONDS):
-    """Atomically claim one due job; returns ``(job, claim_token)`` or None."""
+    """Atomically claim one due job; returns ``(job, claim_token)`` or None.
+
+    Jobs whose lease is still held by another worker are skipped instead of
+    blocking the whole queue.
+    """
     now = timezone.now()
     with transaction.atomic():
-        job = (
+        candidates = list(
             KnowledgeIndexJob.objects.select_for_update()
             .filter(status__in=["pending", "processing"])
             .filter(next_run_at__lte=now)
-            .order_by("created_at")
-            .first()
+            .order_by("created_at")[:50]
         )
-        if job is None:
-            return None
-        if job.status == "processing" and job.lease_until and job.lease_until > now:
-            # Another worker still holds the lease.
-            return None
-        claim_token = f"{job.id}-{now.timestamp()}"
-        updated = KnowledgeIndexJob.objects.filter(
-            pk=job.pk,
-            claim_token=job.claim_token,
-            status=job.status,
-        ).update(
-            status="processing",
-            claim_token=claim_token,
-            lease_until=now + timedelta(seconds=lease_seconds),
-            attempts=job.attempts + 1,
-            updated_at=now,
-        )
-        if not updated:
-            return None
-        job.refresh_from_db()
-        return job, claim_token
+        for job in candidates:
+            if (
+                job.status == "processing"
+                and job.lease_until
+                and job.lease_until > now
+            ):
+                # Another worker still holds the lease; try the next job.
+                continue
+            claim_token = f"{job.id}-{now.timestamp()}"
+            updated = KnowledgeIndexJob.objects.filter(
+                pk=job.pk,
+                claim_token=job.claim_token,
+                status=job.status,
+            ).update(
+                status="processing",
+                claim_token=claim_token,
+                lease_until=now + timedelta(seconds=lease_seconds),
+                attempts=job.attempts + 1,
+                updated_at=now,
+            )
+            if not updated:
+                continue
+            job.refresh_from_db()
+            return job, claim_token
+    return None
 
 
-def _source_payload(document: KnowledgeDocument) -> tuple[str, bytes]:
-    """Return (filename, raw bytes) of the document source."""
+def _source_payload(document: KnowledgeDocument) -> tuple[str, dict]:
+    """Return (filename, source description) of the document source.
+
+    A file on disk is passed by path so the subprocess never has to hold the
+    whole file in memory twice; inline text is passed base64 encoded.
+    """
     if document.source_type == "material" and document.source_material_id:
         material = Material.objects.filter(
             pk=document.source_material_id, owner=document.owner
@@ -71,10 +95,10 @@ def _source_payload(document: KnowledgeDocument) -> tuple[str, bytes]:
         if material.deleted_at is not None:
             raise KnowledgeParseError("来源资料已移入回收站。", code="source_deleted")
         try:
-            with material.storage_key.open("rb") as handle:
-                return material.original_name, handle.read()
-        except OSError as exc:
+            path = material.storage_key.path
+        except (OSError, ValueError) as exc:
             raise KnowledgeParseError("来源资料文件无法读取。", code="source_unreadable") from exc
+        return material.original_name, {"path": path}
 
     if document.source_type == "journal_entry" and document.source_entry_id:
         entry = DailyEntry.objects.filter(
@@ -82,10 +106,20 @@ def _source_payload(document: KnowledgeDocument) -> tuple[str, bytes]:
         ).first()
         if entry is None:
             raise KnowledgeParseError("来源记录已不存在。", code="source_missing")
-        return f"journal-{entry.date.isoformat()}.md", entry.content.encode("utf-8")
+        return (
+            f"journal-{entry.date.isoformat()}.md",
+            {"text_b64": base64.b64encode(entry.content.encode("utf-8")).decode("ascii")},
+        )
 
     if document.source_type == "manual":
-        return f"{document.title}.md", (document.manual_body or "").encode("utf-8")
+        return (
+            f"{document.title}.md",
+            {
+                "text_b64": base64.b64encode(
+                    (document.manual_body or "").encode("utf-8")
+                ).decode("ascii")
+            },
+        )
 
     if document.source_type == "ai_message" and document.source_message_id:
         from agent.models import Message
@@ -95,9 +129,62 @@ def _source_payload(document: KnowledgeDocument) -> tuple[str, bytes]:
         ).first()
         if message is None:
             raise KnowledgeParseError("来源消息已不存在。", code="source_missing")
-        return f"message-{message.id}.md", (message.content or "").encode("utf-8")
+        return (
+            f"message-{message.id}.md",
+            {"text_b64": base64.b64encode((message.content or "").encode("utf-8")).decode("ascii")},
+        )
 
     raise KnowledgeParseError("该知识条目没有可解析的来源。", code="no_source")
+
+
+def _limit_process() -> None:  # pragma: no cover - runs in the child process
+    """Apply the address space limit to the parse subprocess."""
+    try:
+        import resource
+    except ImportError:
+        # Windows has no rlimit; the timeout still applies.
+        return
+    try:
+        resource.setrlimit(
+            resource.RLIMIT_AS, (PARSE_MEMORY_LIMIT_BYTES, PARSE_MEMORY_LIMIT_BYTES)
+        )
+    except (ValueError, OSError):
+        pass
+
+
+def run_parse_subprocess(filename: str, source: dict) -> dict:
+    """Parse a source in a separate process and return its result."""
+    backend_dir = Path(__file__).resolve().parent.parent
+    with tempfile.TemporaryDirectory(prefix="knowledge-parse-") as workdir:
+        input_path = Path(workdir) / "input.json"
+        output_path = Path(workdir) / "output.json"
+        input_path.write_text(
+            json.dumps({"filename": filename, **source}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        env = dict(os.environ)
+        env["PYTHONPATH"] = str(backend_dir)
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-m", "knowledge.parse_worker", str(input_path), str(output_path)],
+                cwd=str(backend_dir),
+                env=env,
+                capture_output=True,
+                timeout=PARSE_TIMEOUT_SECONDS,
+                preexec_fn=_limit_process if os.name == "posix" else None,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise KnowledgeParseError(
+                f"解析超时（超过 {PARSE_TIMEOUT_SECONDS} 秒）。", code="parse_timeout"
+            ) from exc
+        if not output_path.exists():
+            detail = (completed.stderr or b"").decode("utf-8", errors="replace")[:500]
+            logger.warning("Parse subprocess failed: %s", detail)
+            raise KnowledgeParseError(
+                "解析进程异常退出，未生成索引结果。", code="parse_crashed"
+            )
+        return json.loads(output_path.read_text(encoding="utf-8"))
 
 
 def process_job(job: KnowledgeIndexJob, claim_token: str) -> bool:
@@ -112,13 +199,28 @@ def process_job(job: KnowledgeIndexJob, claim_token: str) -> bool:
         return False
 
     try:
-        filename, raw = _source_payload(document)
-        result = parse_document(filename, raw)
+        filename, source = _source_payload(document)
+        result = run_parse_subprocess(filename, source)
     except KnowledgeParseError as exc:
         _fail_job(job, claim_token, exc.detail, code=exc.code)
         return False
 
-    if result.needs_ocr:
+    if not result.get("ok"):
+        code = str(result.get("code") or "parse_failed")
+        detail = str(result.get("detail") or "解析失败。")
+        if code == "needs_ocr":
+            _fail_job(
+                job,
+                claim_token,
+                "该文件是扫描件，需要 OCR 才能入库。",
+                code="needs_ocr",
+                status="needs_ocr",
+            )
+            return False
+        _fail_job(job, claim_token, detail, code=code)
+        return False
+
+    if result.get("needs_ocr"):
         _fail_job(
             job,
             claim_token,
@@ -128,7 +230,18 @@ def process_job(job: KnowledgeIndexJob, claim_token: str) -> bool:
         )
         return False
 
-    chunks = chunk_segments(result.segments)
+    segments = [
+        Segment(
+            text=item.get("text", ""),
+            heading_path=item.get("heading_path", ""),
+            page_start=item.get("page_start"),
+            page_end=item.get("page_end"),
+            char_start=item.get("char_start", 0),
+            char_end=item.get("char_end", 0),
+        )
+        for item in result.get("segments", [])
+    ]
+    chunks = chunk_segments(segments)
     if not chunks:
         _fail_job(job, claim_token, "没有提取到可索引的文字内容。", code="empty_text")
         return False
@@ -152,13 +265,18 @@ def process_job(job: KnowledgeIndexJob, claim_token: str) -> bool:
             _fail_job(job, claim_token, str(exc), code="quota_exceeded")
             return False
 
-        revision.body = result.text
-        revision.source_hash = content_hash(result.text)
+        revision.body = result.get("text", "")
+        revision.source_hash = content_hash(result.get("text", ""))
         revision.index_status = "ready"
         revision.error_code = ""
         revision.error_detail = ""
         revision.indexed_at = timezone.now()
         revision.save()
+        # Older revisions keep their metadata but release their chunks so
+        # they do not occupy the per owner segment quota forever.
+        KnowledgeChunk.objects.filter(document=document).exclude(
+            revision=revision
+        ).delete()
         document.current_revision = revision
         document.save(update_fields=["current_revision"])
         KnowledgeIndexJob.objects.filter(pk=job.pk).update(

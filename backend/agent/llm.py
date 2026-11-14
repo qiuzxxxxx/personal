@@ -115,17 +115,18 @@ def build_rich_messages(
             item
             for item in history
             if (getattr(item, "context_epoch", 1) or 1) >= history_floor_epoch
+            or item.id == current_message.id
         ]
     all_attachments = _attachment_map(history)
     current_by_id = {str(item.id): item for item in current_attachments}
     current_id = str(current_message.id)
     rich: list[RichMessage] = []
-
     # Reference material (knowledge chunks, personal memories, workspace
     # snapshot) is injected as a read-only context block. It carries no
-    # instructions: the model may only cite it.
-    if context_text:
-        rich.append(RichMessage(role="user", text=context_text))
+    # instructions: the model may only cite it. It is merged into the
+    # current user message instead of being sent as an extra message so
+    # that the user/assistant alternation every provider requires is kept.
+    pending_context = context_text.strip()
 
     for message in history:
         text = (message.content or "").strip()
@@ -170,7 +171,30 @@ def build_rich_messages(
         if not text and not images and message.role == "assistant":
             continue
 
+        # The reference material belongs to this turn's question: it is
+        # placed right before the question inside the same user message so
+        # that providers which require alternating roles still accept it.
+        if pending_context and message.id == current_message.id:
+            text = f"{pending_context}\n\n{text}" if text else pending_context
+            pending_context = ""
+
         rich.append(RichMessage(role=message.role, text=text, images=images))
+
+    if pending_context:
+        # The current message was not part of the history (for example the
+        # conversation was trimmed); attach the reference material to the
+        # last user turn so that no extra message breaks role alternation.
+        for index in range(len(rich) - 1, -1, -1):
+            if rich[index].role == "user":
+                rich[index].text = (
+                    f"{pending_context}\n\n{rich[index].text}"
+                    if rich[index].text
+                    else pending_context
+                )
+                pending_context = ""
+                break
+        if pending_context:
+            rich.append(RichMessage(role="user", text=pending_context))
 
     # Keep the newest turns when the context is unusually large.
     total = sum(len(item.text) for item in rich)

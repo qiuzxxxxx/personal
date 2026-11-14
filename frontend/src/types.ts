@@ -68,14 +68,49 @@ export interface AgentAttachmentUpload {
   extension: string;
 }
 
+export interface AgentMessageCitation {
+  id: string;
+  source_id: string;
+  source_type: string;
+  title: string;
+  document_id: string | null;
+  revision_no: number;
+}
+
 export interface AgentMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
   attachments: AgentAttachmentRef[];
+  knowledge_sources?: KnowledgeSourceRef[];
+  citations?: AgentMessageCitation[];
   created_at: string;
   streaming?: boolean;
   error?: string;
+}
+
+export interface KnowledgeSourceRef {
+  source_id: string;
+  source_type: string;
+  title: string;
+  document_id: string;
+  revision_no: number;
+  chunk_id: string;
+  heading_path: string;
+  page_start: number | null;
+  page_end: number | null;
+  text: string;
+  snapshot: boolean;
+}
+
+export interface KnowledgeScope {
+  enabled: boolean;
+  scope: "all" | "collections";
+  collection_ids: string[];
+  use_personal_memory: boolean;
+  project_id: string | null;
+  use_workspace: boolean;
+  strict_sources: boolean;
 }
 
 export interface ConversationSummary {
@@ -83,6 +118,13 @@ export interface ConversationSummary {
   title: string;
   message_count: number;
   last_message: string;
+  knowledge_enabled?: boolean;
+  knowledge_scope?: "all" | "collections";
+  knowledge_collection_ids?: string[];
+  use_personal_memory?: boolean;
+  use_workspace?: boolean;
+  strict_sources?: boolean;
+  knowledge_project?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -143,6 +185,23 @@ export interface AgentStreamDelta {
 export interface AgentStreamDone {
   type: "done";
   message: AgentMessage;
+  sources?: KnowledgeSourceRef[];
+  context_epoch?: number;
+}
+
+export interface AgentStreamSources {
+  type: "sources";
+  retrieval: {
+    knowledge: boolean;
+    scope: "all" | "collections";
+    collection_ids: string[];
+    use_personal_memory: boolean;
+    use_workspace: boolean;
+    strict_sources: boolean;
+  };
+  sources: KnowledgeSourceRef[];
+  warnings: string[];
+  context_epoch: number;
 }
 
 export interface AgentStreamError {
@@ -155,6 +214,7 @@ export type AgentStreamEvent =
   | AgentStreamMeta
   | AgentStreamDelta
   | AgentStreamDone
+  | AgentStreamSources
   | AgentStreamError;
 
 export type TaskStatus = "todo" | "doing" | "done" | "cancelled";

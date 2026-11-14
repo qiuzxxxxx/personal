@@ -140,10 +140,17 @@ def _render_context_text(context) -> str:
     return "\n\n".join(blocks)
 
 
-def _history_floor_epoch(user) -> int:
-    """The oldest context epoch that may still be sent to the model."""
+def _history_floor_epoch(user, conversation=None) -> int:
+    """The oldest context epoch that may still be sent to the model.
+
+    Only conversations that actually received reference material are
+    affected by a withdrawal: a chat that never used the knowledge base or
+    the personal memories keeps its full history.
+    """
     from knowledge.memories import current_floor_epoch
 
+    if conversation is None or not getattr(conversation, "context_injected", False):
+        return 1
     return current_floor_epoch(user)
 
 
@@ -174,6 +181,7 @@ def _save_citations(message, context) -> None:
                 "heading_path": source.heading_path,
                 "page_start": source.page_start,
                 "page_end": source.page_end,
+                "title": source.title,
             },
             snapshot_text=source.text[:1000],
         )
@@ -471,8 +479,13 @@ def chat(request):
     context = _build_request_context(request, conversation, content)
     context_text = _render_context_text(context)
 
+    # Once reference material entered this conversation, a later withdrawal
+    # must be able to drop the affected history again.
+    if context_text and not conversation.context_injected:
+        conversation.context_injected = True
+
     attachment_refs = [attachment_ref(item) for item in current_attachments]
-    floor_epoch = _history_floor_epoch(request.user)
+    floor_epoch = _history_floor_epoch(request.user, conversation)
     conversation.context_epoch = floor_epoch
     user_message = Message.objects.create(
         conversation=conversation,
@@ -532,7 +545,7 @@ def chat(request):
                 current_attachments,
                 context_text=context_text,
                 strict_sources=conversation.strict_sources,
-                history_floor_epoch=_history_floor_epoch(request.user),
+                history_floor_epoch=_history_floor_epoch(request.user, conversation),
             ):
                 if not delta:
                     continue
@@ -544,7 +557,7 @@ def chat(request):
                 raise LLMError("模型没有返回任何内容，请检查接口与模型名称。")
             # Re-check the context epoch before saving: a withdrawal during
             # the stream must not be persisted as a confirmed answer.
-            floor = _history_floor_epoch(request.user)
+            floor = _history_floor_epoch(request.user, conversation)
             assistant_message = Message.objects.create(
                 conversation=conversation,
                 role="assistant",
@@ -577,7 +590,7 @@ def chat(request):
                     role="assistant",
                     content=partial,
                     knowledge_sources=[item.as_dict() for item in context.sources],
-                    context_epoch=_history_floor_epoch(request.user),
+                    context_epoch=_history_floor_epoch(request.user, conversation),
                 )
                 conversation.save(update_fields=["updated_at"])
             yield _sse(

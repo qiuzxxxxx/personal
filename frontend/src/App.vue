@@ -9,11 +9,13 @@ import SiteFooter from "@/components/SiteFooter.vue";
 import { useUiStore } from "@/stores/ui";
 import { useAuthStore } from "@/stores/auth";
 import { useWorkspaceStore } from "@/stores/workspace";
+import { useKnowledgeStore } from "@/stores/knowledge";
 
 const route = useRoute();
 const ui = useUiStore();
 const auth = useAuthStore();
 const workspace = useWorkspaceStore();
+const knowledge = useKnowledgeStore();
 
 // 未登录访客（免密中转站）不得看到任何功能入口：整体走 bare 布局。
 const isBare = computed(() => Boolean(route.meta.bare) || !auth.isAuthenticated);
@@ -28,6 +30,8 @@ const cachedViews = [
   "ProjectsView",
   "JournalView",
   "LibraryView",
+  "KnowledgeView",
+  "KnowledgeMemoriesView",
   "AgentChatView",
   "DirectChatView",
   "TransferStation",
@@ -37,7 +41,10 @@ const cachedViews = [
 // 账号切换时清空工作台缓存，避免上一个账号的任务与记录继续留在内存中。
 watch(
   () => auth.user?.id,
-  () => workspace.reset(),
+  () => {
+    workspace.reset();
+    knowledge.reset();
+  },
 );
 
 watch(
