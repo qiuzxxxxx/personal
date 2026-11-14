@@ -6,6 +6,7 @@ import {
   Folder,
   FolderPlus,
   Image as ImageIcon,
+  QrCode,
   RotateCcw,
   Search,
   Trash2,
@@ -14,6 +15,7 @@ import {
 } from "lucide-vue-next";
 import api from "@/api/client";
 import { extractApiError } from "@/api/client";
+import PhoneUploadDialog from "@/components/PhoneUploadDialog.vue";
 import {
   createFolder,
   deleteFolder,
@@ -53,6 +55,7 @@ const preview = ref<{ material: LibraryMaterial; url: string; kind: "image" | "p
   null,
 );
 const previewText = ref("");
+const showPhoneUpload = ref(false);
 
 const fileTypes = [
   { value: "", label: "全部类型" },
@@ -237,6 +240,14 @@ onMounted(async () => {
           </p>
         </div>
         <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-[12.5px] font-medium text-ink-700 shadow-sm transition hover:border-accent-200"
+            @click="showPhoneUpload = true"
+          >
+            <QrCode :size="15" />
+            手机上传
+          </button>
           <button
             type="button"
             :disabled="uploading"
@@ -465,6 +476,14 @@ onMounted(async () => {
         </div>
       </div>
     </div>
+
+    <PhoneUploadDialog
+      v-if="showPhoneUpload"
+      :folder-id="activeFolder || undefined"
+      target-label="私人资料库"
+      @close="showPhoneUpload = false"
+      @received="refresh"
+    />
 
     <div
       v-if="preview"

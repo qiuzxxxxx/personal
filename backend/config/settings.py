@@ -102,6 +102,22 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = 64 * 1024 * 1024
 DATA_UPLOAD_MAX_NUMBER_FILES = 1
 
+# Public address of the workbench. QR codes must point at a phone reachable
+# address, so the value is configured explicitly and never taken from Host.
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+
+# Phone upload sessions (QR codes).
+UPLOAD_SESSION_TTL_SECONDS = int(os.environ.get("UPLOAD_SESSION_TTL_SECONDS", "600"))
+UPLOAD_SESSION_MAX_FILES = int(os.environ.get("UPLOAD_SESSION_MAX_FILES", "20"))
+UPLOAD_SESSION_MAX_BYTES = int(
+    os.environ.get("UPLOAD_SESSION_MAX_BYTES", str(500 * 1024 * 1024))
+)
+UPLOAD_SESSION_MAX_FILE_BYTES = int(
+    os.environ.get("UPLOAD_SESSION_MAX_FILE_BYTES", str(100 * 1024 * 1024))
+)
+UPLOAD_SESSION_MAX_ACTIVE = int(os.environ.get("UPLOAD_SESSION_MAX_ACTIVE", "3"))
+UPLOAD_RECEIPT_LEASE_SECONDS = int(os.environ.get("UPLOAD_RECEIPT_LEASE_SECONDS", "1200"))
+
 NEXUS_BUILTIN_LLM_API_KEY = os.environ.get("NEXUS_BUILTIN_LLM_API_KEY", "")
 NEXUS_TRUSTED_PROXY_HOPS = max(0, int(os.environ.get("NEXUS_TRUSTED_PROXY_HOPS", "0")))
 NEXUS_LLM_PRIVATE_ORIGINS = [

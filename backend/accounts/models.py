@@ -2,6 +2,32 @@ from django.contrib.auth.models import User
 from django.db import models
 
 
+class AccountSecurity(models.Model):
+    """Security state that invalidates delivery credentials when it changes."""
+
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name="security"
+    )
+    auth_version = models.PositiveIntegerField(default=0)
+    password_changed_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"security:{self.user.username}@{self.auth_version}"
+
+    @classmethod
+    def version_for(cls, user) -> int:
+        state, _ = cls.objects.get_or_create(user=user)
+        return state.auth_version
+
+    @classmethod
+    def bump(cls, user) -> int:
+        state, _ = cls.objects.get_or_create(user=user)
+        state.auth_version += 1
+        state.save(update_fields=["auth_version", "updated_at"])
+        return state.auth_version
+
+
 class ActivityLog(models.Model):
     """Security/operation audit trail.
 

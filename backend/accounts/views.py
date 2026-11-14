@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .logging import client_ip, record
-from .models import ActivityLog
+from .models import ActivityLog, AccountSecurity
 from .permissions import (
     ADMIN_USERNAMES,
     IsAccountAdmin,
@@ -22,6 +22,17 @@ from .permissions import (
     is_account_admin,
     is_super_admin,
 )
+
+
+def invalidate_upload_sessions(user):
+    """Logouts and password resets must close phone upload sessions."""
+    from workspace.models import UploadSession
+    from workspace.upload_views import revoke_session
+
+    AccountSecurity.bump(user)
+    for session in UploadSession.objects.filter(owner=user, state="active"):
+        revoke_session(session)
+
 
 PRESET_ROLES = {
     "qzx": "最高管理员",
@@ -110,6 +121,7 @@ class LogoutView(APIView):
     def post(self, request):
         record(request, "logout", user=request.user)
         Token.objects.filter(user=request.user).delete()
+        invalidate_upload_sessions(request.user)
         return Response({"detail": "已退出登录。"})
 
 
@@ -254,6 +266,7 @@ class ChangePasswordView(APIView):
             target.set_password(password)
             target.save(update_fields=["password"])
             Token.objects.filter(user=target).delete()
+        invalidate_upload_sessions(target)
         record(
             request,
             "password_changed",

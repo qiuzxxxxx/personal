@@ -45,6 +45,12 @@ const router = createRouter({
       meta: { title: "私人资料库", requiresAuth: true },
     },
     {
+      path: "/upload",
+      name: "phone-upload",
+      component: () => import("@/views/MobileUploadView.vue"),
+      meta: { title: "手机上传", bare: true },
+    },
+    {
       path: "/agent",
       name: "agent",
       component: () => import("@/views/AgentChatView.vue"),

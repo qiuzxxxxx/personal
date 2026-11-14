@@ -15,4 +15,5 @@ urlpatterns = [
     path("api/chat/", include("chat.urls")),
     path("api/transfer/", include("transfer.urls")),
     path("api/", include("workspace.urls")),
+    path("api/upload/", include("workspace.upload_urls")),
 ]

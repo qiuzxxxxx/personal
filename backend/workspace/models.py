@@ -5,6 +5,8 @@ never accepted from client payloads.
 """
 from __future__ import annotations
 
+import uuid
+
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
@@ -228,6 +230,101 @@ class TaskMaterial(VersionedModel):
 
     def __str__(self) -> str:  # pragma: no cover
         return f"{self.task_id}:{self.material_id}"
+
+
+class UploadSession(models.Model):
+    """A short lived, delivery-only credential created by the desktop owner."""
+
+    STATE_CHOICES = [
+        ("active", "接收中"),
+        ("revoked", "已撤销"),
+        ("closed", "已结束"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="upload_sessions",
+    )
+    token_digest = models.CharField(max_length=64, unique=True)
+    destination_folder = models.ForeignKey(
+        Folder,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="upload_sessions",
+    )
+    destination_task = models.ForeignKey(
+        Task,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="upload_sessions",
+    )
+    state = models.CharField(max_length=16, choices=STATE_CHOICES, default="active")
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    max_files = models.PositiveIntegerField(default=20)
+    max_bytes = models.BigIntegerField(default=500 * 1024 * 1024)
+    max_file_bytes = models.BigIntegerField(default=100 * 1024 * 1024)
+    reserved_files = models.PositiveIntegerField(default=0)
+    reserved_bytes = models.BigIntegerField(default=0)
+    committed_files = models.PositiveIntegerField(default=0)
+    committed_bytes = models.BigIntegerField(default=0)
+    used_bytes = models.BigIntegerField(default=0)
+    auth_version = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["owner", "state", "expires_at"])]
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"upload-session:{self.id}"
+
+
+class UploadReceipt(models.Model):
+    """One file transfer inside an upload session."""
+
+    STATE_CHOICES = [
+        ("reserved", "已预占"),
+        ("receiving", "接收中"),
+        ("committed", "已完成"),
+        ("failed", "失败"),
+        ("expired", "已过期"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        UploadSession, on_delete=models.CASCADE, related_name="receipts"
+    )
+    client_upload_id = models.CharField(max_length=64)
+    original_name = models.CharField(max_length=255)
+    declared_size = models.BigIntegerField(default=0)
+    actual_size = models.BigIntegerField(default=0)
+    sha256 = models.CharField(max_length=64, blank=True, default="")
+    state = models.CharField(max_length=16, choices=STATE_CHOICES, default="reserved")
+    lease_expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    failure_code = models.CharField(max_length=64, blank=True, default="")
+    material = models.OneToOneField(
+        Material, null=True, blank=True, on_delete=models.SET_NULL, related_name="receipt"
+    )
+    attempt_id = models.UUIDField(default=uuid.uuid4)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["session", "client_upload_id"],
+                name="workspace_uploadreceipt_session_client_unique",
+            )
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"receipt:{self.id}:{self.state}"
 
 
 class DailyEntry(VersionedModel):
