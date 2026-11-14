@@ -14,6 +14,7 @@ from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
+from accounts.logging import client_ip
 from accounts.logging import record as audit_log
 from config.streaming import stream_chunks
 from .models import TransferFile
@@ -53,6 +54,17 @@ def anonymous_upload_rate_limit() -> int:
     return int(getattr(settings, "TRANSFER_ANONYMOUS_MAX_FILES_PER_WINDOW", 0))
 
 
+def _budget_key(request) -> str:
+    """The cache key of an anonymous client.
+
+    The client address is resolved exactly like the login rate limit does,
+    so that behind the reverse proxy every visitor gets their own budget
+    instead of sharing the proxy's address.
+    """
+    address = client_ip(request) or "unknown"
+    return f"transfer:anon:{address}"
+
+
 def check_anonymous_budget(request) -> Response | None:
     """Reject anonymous uploads that would exceed the public budget.
 
@@ -64,15 +76,15 @@ def check_anonymous_budget(request) -> Response | None:
     file_budget = anonymous_upload_rate_limit()
     if not total_budget and not file_budget:
         return None
-    window = anonymous_upload_window()
-    key = f"transfer:anon:{request.META.get('REMOTE_ADDR', 'unknown')}"
-    used = cache.get(key) or {"bytes": 0, "files": 0}
-    if used.get("bytes", 0) >= total_budget and total_budget:
+    key = _budget_key(request)
+    used_bytes = cache.get(f"{key}:bytes") or 0
+    used_files = cache.get(f"{key}:files") or 0
+    if total_budget and used_bytes >= total_budget:
         return Response(
             {"detail": "免密上传总量已达上限，请稍后再试。"},
             status=status.HTTP_429_TOO_MANY_REQUESTS,
         )
-    if used.get("files", 0) >= file_budget and file_budget:
+    if file_budget and used_files >= file_budget:
         return Response(
             {"detail": "免密上传次数已达上限，请稍后再试。"},
             status=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -81,17 +93,26 @@ def check_anonymous_budget(request) -> Response | None:
 
 
 def record_anonymous_upload(request, size: int) -> None:
-    """Count an anonymous upload against the public budget."""
+    """Count an anonymous upload against the public budget.
+
+    The two counters are incremented atomically so that concurrent uploads
+    cannot both pass the check.
+    """
     total_budget = anonymous_upload_budget()
     file_budget = anonymous_upload_rate_limit()
     if not total_budget and not file_budget:
         return
     window = anonymous_upload_window()
-    key = f"transfer:anon:{request.META.get('REMOTE_ADDR', 'unknown')}"
-    used = cache.get(key) or {"bytes": 0, "files": 0}
-    used["bytes"] = used.get("bytes", 0) + size
-    used["files"] = used.get("files", 0) + 1
-    cache.set(key, used, timeout=window)
+    key = _budget_key(request)
+    if total_budget:
+        cache.add(f"{key}:bytes", 0, timeout=window)
+        cache.incr(f"{key}:bytes", size)
+        # Keep the window rolling with the last upload.
+        cache.set(f"{key}:bytes", cache.get(f"{key}:bytes", 0), timeout=window)
+    if file_budget:
+        cache.add(f"{key}:files", 0, timeout=window)
+        cache.incr(f"{key}:files", 1)
+        cache.set(f"{key}:files", cache.get(f"{key}:files", 0), timeout=window)
 
 
 def parse_bool(value, default: bool = True) -> bool:

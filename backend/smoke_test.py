@@ -53,8 +53,10 @@ def login(client: httpx.Client, username: str) -> dict:
 def main() -> None:
     # trust_env=False: never route localhost checks through a system proxy.
     with httpx.Client(timeout=30.0, trust_env=False) as client:
-        health = client.get(f"{API}/health/")
-        check("health", health.status_code == 200)
+        live = client.get(f"{API}/health/live/")
+        check("health live", live.status_code == 200, live.text)
+        ready = client.get(f"{API}/health/ready/")
+        check("health ready", ready.status_code == 200, ready.text)
 
         qzx = login(client, "qzx")
         sqx = login(client, "sqx")
