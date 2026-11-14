@@ -14,4 +14,5 @@ urlpatterns = [
     path("api/agent/", include("agent.urls")),
     path("api/chat/", include("chat.urls")),
     path("api/transfer/", include("transfer.urls")),
+    path("api/", include("workspace.urls")),
 ]

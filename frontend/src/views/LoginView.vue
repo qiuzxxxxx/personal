@@ -92,7 +92,7 @@ function homeFor(user: User): string {
     return redirectTarget.value;
   }
   if (user.username === "yk") return "/transfer";
-  return "/agent";
+  return "/today";
 }
 
 async function submit(): Promise<void> {

@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "agent",
     "chat",
     "transfer",
+    "workspace",
 ]
 
 MIDDLEWARE = [

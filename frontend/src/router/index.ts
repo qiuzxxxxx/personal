@@ -15,6 +15,30 @@ const router = createRouter({
       redirect: "/",
     },
     {
+      path: "/today",
+      name: "today",
+      component: () => import("@/views/TodayView.vue"),
+      meta: { title: "今日", requiresAuth: true },
+    },
+    {
+      path: "/tasks",
+      name: "tasks",
+      component: () => import("@/views/TasksView.vue"),
+      meta: { title: "任务", requiresAuth: true },
+    },
+    {
+      path: "/projects",
+      name: "projects",
+      component: () => import("@/views/ProjectsView.vue"),
+      meta: { title: "项目", requiresAuth: true },
+    },
+    {
+      path: "/journal",
+      name: "journal",
+      component: () => import("@/views/JournalView.vue"),
+      meta: { title: "每日记录", requiresAuth: true },
+    },
+    {
       path: "/agent",
       name: "agent",
       component: () => import("@/views/AgentChatView.vue"),
@@ -57,6 +81,10 @@ router.beforeEach(async (to) => {
       path: "/",
       query: { redirect: to.fullPath },
     };
+  }
+  // 已登录用户访问根路径时进入工作台，游客账号仍进入中转站。
+  if (to.path === "/" && auth.isAuthenticated) {
+    return { path: auth.user?.username === "yk" ? "/transfer" : "/today" };
   }
   if (
     auth.isAuthenticated &&

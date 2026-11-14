@@ -156,3 +156,84 @@ export type AgentStreamEvent =
   | AgentStreamDelta
   | AgentStreamDone
   | AgentStreamError;
+
+export type TaskStatus = "todo" | "doing" | "done" | "cancelled";
+export type TaskPriority = "low" | "normal" | "high";
+
+export interface WorkspaceTag {
+  id: string;
+  name: string;
+  normalized_name: string;
+  color: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceProject {
+  id: string;
+  name: string;
+  description: string;
+  status: "active" | "archived";
+  color: string;
+  position: number;
+  version: number;
+  task_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceTask {
+  id: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  scheduled_date: string | null;
+  due_at: string | null;
+  completed_at: string | null;
+  position: number;
+  version: number;
+  project: string | null;
+  project_name: string;
+  project_deleted: boolean;
+  tags: WorkspaceTag[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceJournal {
+  id?: string;
+  date: string;
+  content: string;
+  version: number;
+  exists: boolean;
+}
+
+export interface TodayPayload {
+  date: string;
+  weekday: string;
+  timezone: string;
+  tasks: WorkspaceTask[];
+  overdue: WorkspaceTask[];
+  overdue_count: number;
+  needs_reschedule_count: number;
+  unscheduled_count: number;
+  completed_today: number;
+  journal: {
+    id: string;
+    date: string;
+    version: number;
+    content: string;
+    summary: string;
+    updated_at: string;
+  } | null;
+}
+
+export interface PagedResult<T> {
+  results: T[];
+  page: number;
+  page_size: number;
+  count: number;
+  pages: number;
+}

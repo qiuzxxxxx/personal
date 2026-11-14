@@ -8,10 +8,12 @@ import BrandMark from "@/components/BrandMark.vue";
 import SiteFooter from "@/components/SiteFooter.vue";
 import { useUiStore } from "@/stores/ui";
 import { useAuthStore } from "@/stores/auth";
+import { useWorkspaceStore } from "@/stores/workspace";
 
 const route = useRoute();
 const ui = useUiStore();
 const auth = useAuthStore();
+const workspace = useWorkspaceStore();
 
 // 未登录访客（免密中转站）不得看到任何功能入口：整体走 bare 布局。
 const isBare = computed(() => Boolean(route.meta.bare) || !auth.isAuthenticated);
@@ -21,11 +23,21 @@ const isBare = computed(() => Boolean(route.meta.bare) || !auth.isAuthenticated)
  * no skeleton flashes, no list refetches, no WebSocket reconnects.
  */
 const cachedViews = [
+  "TodayView",
+  "TasksView",
+  "ProjectsView",
+  "JournalView",
   "AgentChatView",
   "DirectChatView",
   "TransferStation",
   "AccountsView",
 ];
+
+// 账号切换时清空工作台缓存，避免上一个账号的任务与记录继续留在内存中。
+watch(
+  () => auth.user?.id,
+  () => workspace.reset(),
+);
 
 watch(
   () => route.fullPath,
@@ -50,7 +62,7 @@ watch(
         >
           <Menu :size="20" />
         </button>
-        <RouterLink to="/agent" class="flex items-center gap-2.5">
+        <RouterLink to="/today" class="flex items-center gap-2.5">
           <BrandMark :size="28" />
           <span class="text-[15px] font-semibold tracking-tight text-ink-900">zixxx</span>
         </RouterLink>

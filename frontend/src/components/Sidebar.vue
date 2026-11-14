@@ -15,6 +15,10 @@ import {
   ChevronRight,
   ShieldCheck,
   Circle,
+  Sun,
+  ListTodo,
+  FolderKanban,
+  NotebookPen,
 } from "lucide-vue-next";
 import BrandMark from "@/components/BrandMark.vue";
 import { useUiStore } from "@/stores/ui";
@@ -33,6 +37,10 @@ const configStore = useConfigStore();
 const toast = useToastStore();
 
 const navItems = [
+  { path: "/today", label: "今日", caption: "今日安排与待办", icon: Sun, adminOnly: false },
+  { path: "/tasks", label: "任务", caption: "全部任务与筛选", icon: ListTodo, adminOnly: false },
+  { path: "/projects", label: "项目", caption: "任务归类", icon: FolderKanban, adminOnly: false },
+  { path: "/journal", label: "记录", caption: "每日记录", icon: NotebookPen, adminOnly: false },
   { path: "/agent", label: "AI 对话", caption: "多模态智能助手", icon: Sparkles, adminOnly: false },
   { path: "/chat", label: "双人密聊", caption: "qzx ↔ sqx", icon: MessagesSquare, adminOnly: false },
   { path: "/transfer", label: "文件中转站", caption: "免密上传 · 可见性控制", icon: HardDriveUpload, adminOnly: false },
