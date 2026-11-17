@@ -246,5 +246,3 @@ npm audit        # 联网失败时记录原因，不得输出“无漏洞”
 - **联系**：zixuanqiu72@gmail.com（页脚与《使用声明》可点击）
 - **友链**：[qzx 的博客](https://blog.qzx1028.space) · [GitHub @qiuzxxxxx](https://github.com/qiuzxxxxx)
 - **备案**：[豫ICP备2026020102号](https://beian.miit.gov.cn/)（展示于 [SiteFooter.vue](frontend/src/components/SiteFooter.vue)）
-#   p e r s o n a l  
- 

@@ -23,6 +23,7 @@ backend/var/
 # Test scratch directories and stray temporary files (the platform temp dir
 # may fall back to the repository root). The application packages are
 # re-included explicitly because their names are eight characters long too.
+/tmp*/
 backend/*-test-*/
 /backend/[0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_]
 !/backend/accounts/
@@ -61,3 +62,7 @@ Thumbs.db
 .env.local
 backend/.master.key
 backend/config/local_secrets.py
+
+# Temp directories
+tmp*/
+backend/tmp*/
