@@ -8,9 +8,9 @@ from django.http import FileResponse
 from django.utils import timezone
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.permissions import CanUseWorkspace
 from config.http import error, no_store, paginate, parse_int
 from config.streaming import stream_chunks
 
@@ -101,7 +101,7 @@ def resolve_material_tags(owner, raw_tags):
 # folders
 # --------------------------------------------------------------------------- #
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def folder_list(request):
     if request.method == "GET":
         queryset = folder_queryset(request).order_by("position", "created_at")
@@ -119,7 +119,7 @@ def folder_list(request):
 
 
 @api_view(["GET", "PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def folder_detail(request, folder_id):
     folder = Folder.objects.filter(pk=folder_id, owner=request.user).first()
     if folder is None:
@@ -144,6 +144,8 @@ def folder_detail(request, folder_id):
     name = str(request.data.get("name") or "").strip()
     if not name:
         return error("资料夹名称不能为空。", 400, code="invalid_payload")
+    if len(name) > 120:
+        return error("资料夹名称不能超过 120 个字符。", 400, code="invalid_payload")
     updated = Folder.objects.filter(
         pk=folder.pk, owner=request.user, version=version, deleted_at__isnull=True
     ).update(name=name, version=version + 1, updated_at=timezone.now())
@@ -164,7 +166,7 @@ def folder_detail(request, folder_id):
 # --------------------------------------------------------------------------- #
 @api_view(["GET", "POST"])
 @parser_classes([MultiPartParser, FormParser])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def material_list(request):
     if request.method == "GET":
         queryset = material_queryset(request).order_by("-created_at")
@@ -213,7 +215,7 @@ def material_list(request):
 
 
 @api_view(["GET", "PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def material_detail(request, material_id):
     material = Material.objects.filter(pk=material_id, owner=request.user).first()
     if material is None:
@@ -266,7 +268,7 @@ def material_detail(request, material_id):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def material_restore(request, material_id):
     material = Material.objects.filter(pk=material_id, owner=request.user).first()
     if material is None:
@@ -281,7 +283,7 @@ def material_restore(request, material_id):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def material_download(request, material_id):
     material = Material.objects.filter(pk=material_id, owner=request.user).first()
     if material is None:
@@ -318,7 +320,7 @@ def material_download(request, material_id):
 # task attachments
 # --------------------------------------------------------------------------- #
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def task_materials(request, task_id):
     task = Task.objects.filter(pk=task_id, owner=request.user, deleted_at__isnull=True).first()
     if task is None:
@@ -343,7 +345,7 @@ def task_materials(request, task_id):
 
 
 @api_view(["DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def task_material_detail(request, task_id, material_id):
     task = Task.objects.filter(pk=task_id, owner=request.user).first()
     material = Material.objects.filter(pk=material_id, owner=request.user).first()

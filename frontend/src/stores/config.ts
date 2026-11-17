@@ -18,6 +18,7 @@ export const useConfigStore = defineStore("config", () => {
   const state = ref<ApiConfigState>({ ...EMPTY_STATE });
   const loaded = ref(false);
   let loading: Promise<void> | null = null;
+  let sessionEpoch = 0;
 
   const config = computed<ApiConfig>(() => ({
     provider: state.value.provider,
@@ -54,22 +55,27 @@ export const useConfigStore = defineStore("config", () => {
   async function load(force = false): Promise<void> {
     if (loading) return loading;
     if (loaded.value && !force) return;
+    const epoch = sessionEpoch;
     loading = (async () => {
       try {
-        state.value = await fetchAgentConfig();
+        const next = await fetchAgentConfig();
+        if (epoch !== sessionEpoch) return;
+        state.value = next;
         loaded.value = true;
         await migrateLegacy();
       } catch {
-        loaded.value = false;
+        if (epoch === sessionEpoch) loaded.value = false;
       } finally {
-        loading = null;
+        if (epoch === sessionEpoch) loading = null;
       }
     })();
     return loading;
   }
 
   async function save(payload: SaveAgentConfigPayload): Promise<ApiConfigState> {
+    const epoch = sessionEpoch;
     const next = await saveAgentConfig(payload);
+    if (epoch !== sessionEpoch) return next;
     state.value = next;
     loaded.value = true;
     return next;
@@ -86,6 +92,8 @@ export const useConfigStore = defineStore("config", () => {
   }
 
   function reset(): void {
+    sessionEpoch += 1;
+    loading = null;
     state.value = { ...EMPTY_STATE };
     loaded.value = false;
   }

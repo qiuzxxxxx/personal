@@ -1,11 +1,41 @@
 import api from "./client";
-import type { TransferFile } from "@/types";
+import type { AnnouncementHistoryItem, TransferFile } from "@/types";
 
 export interface UploadTransferPayload {
   file: File;
   isPublic: boolean;
   remark?: string;
   uploaderName?: string;
+}
+
+export async function getTransferAnnouncement(): Promise<{ content: string; updated_at: string | null }> {
+  const { data } = await api.get("/transfer/announcement/");
+  return data;
+}
+
+export async function saveTransferAnnouncement(content: string): Promise<{ content: string; updated_at: string | null }> {
+  const { data } = await api.put("/transfer/announcement/", { content });
+  return data;
+}
+
+export async function getLoginAnnouncement(): Promise<{ content: string; updated_at: string | null }> {
+  const { data } = await api.get("/transfer/login-announcement/");
+  return data;
+}
+
+export async function saveLoginAnnouncement(content: string): Promise<{ content: string; updated_at: string | null }> {
+  const { data } = await api.put("/transfer/login-announcement/", { content });
+  return data;
+}
+
+export async function getAnnouncementHistory(
+  kind?: "transfer" | "login",
+): Promise<AnnouncementHistoryItem[]> {
+  const { data } = await api.get<AnnouncementHistoryItem[]>(
+    "/transfer/announcement-history/",
+    { params: kind ? { kind } : undefined },
+  );
+  return data;
 }
 
 export async function listTransferFiles(): Promise<TransferFile[]> {
@@ -36,7 +66,7 @@ export async function uploadTransferFile(
 
 export async function patchTransferFile(
   id: string,
-  patch: Partial<Pick<TransferFile, "original_name" | "remark" | "is_public">>,
+  patch: Partial<Pick<TransferFile, "original_name" | "remark" | "is_public" | "visible_until">>,
 ): Promise<TransferFile> {
   const { data } = await api.patch<TransferFile>(`/transfer/files/${id}/`, patch);
   return data;

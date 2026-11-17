@@ -129,13 +129,16 @@ export async function fetchDocuments(query: {
   source_type?: string;
   deleted?: boolean;
   page_size?: number;
+  page?: number;
 } = {}): Promise<PagedResult<KnowledgeDocument>> {
   const params: Record<string, unknown> = {};
   if (query.collection) params.collection = query.collection;
   if (query.q) params.q = query.q;
   if (query.source_type) params.source_type = query.source_type;
   if (query.deleted) params.deleted = "true";
+  if (query.page) params.page = query.page;
   params.page_size = query.page_size ?? 100;
+  if (query.page) params.page = query.page;
   const { data } = await api.get<PagedResult<KnowledgeDocument>>("/knowledge/documents/", {
     params,
   });
@@ -215,10 +218,12 @@ export async function searchKnowledge(payload: {
 export async function fetchMemories(query: {
   status?: MemoryStatus;
   page_size?: number;
+  page?: number;
 } = {}): Promise<PagedResult<PersonalMemory>> {
   const params: Record<string, unknown> = {};
   if (query.status) params.status = query.status;
   params.page_size = query.page_size ?? 100;
+  if (query.page) params.page = query.page;
   const { data } = await api.get<PagedResult<PersonalMemory>>("/knowledge/memories/", {
     params,
   });
@@ -271,6 +276,10 @@ export async function forgetMemory(id: string, version: number): Promise<Persona
     version,
   });
   return data;
+}
+
+export async function deleteMemory(id: string, version: number): Promise<void> {
+  await api.delete(`/knowledge/memories/${id}/`, { data: { version } });
 }
 
 export async function fetchCitation(id: string): Promise<{

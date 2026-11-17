@@ -29,7 +29,39 @@ def model_url(value: str) -> httpx.URL:
         or url.port == 0
     ):
         raise LLMError("模型 Base URL 必须是有效的 HTTP(S) 地址，且不含账号信息或片段。")
+    if url.scheme == "http":
+        host = url.host.lower().strip("[]")
+        loopback = host == "localhost"
+        try:
+            loopback = loopback or ipaddress.ip_address(host).is_loopback
+        except ValueError:
+            pass
+        # Clear-text HTTP can expose both the model API key and private user
+        # content. Permit it only for loopback development or an exact,
+        # operator-configured private service origin.
+        if not loopback and not _http_origin_is_allowlisted(url):
+            raise LLMError("公网模型接口必须使用 HTTPS；HTTP 仅允许本机或已配置的内网接口。")
     return url
+
+
+def _http_origin_is_allowlisted(url: httpx.URL) -> bool:
+    for value in settings.NEXUS_LLM_PRIVATE_ORIGINS:
+        try:
+            allowed = httpx.URL(value)
+        except (httpx.InvalidURL, ValueError):
+            continue
+        if (
+            allowed.scheme == "http"
+            and allowed.host
+            and not allowed.userinfo
+            and not allowed.fragment
+            and allowed.path == "/"
+            and not allowed.query
+            and allowed.port != 0
+            and origin(allowed) == origin(url)
+        ):
+            return True
+    return False
 
 
 def origin(url: httpx.URL) -> tuple[str, str, int]:

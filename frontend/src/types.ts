@@ -19,18 +19,22 @@ export interface User {
   username: string;
   display_name: string;
   role: string;
+  access_level: "admin" | "member" | "guest";
   is_qzx: boolean;
   is_admin: boolean;
   is_super: boolean;
   is_chat_user: boolean;
+  is_guest: boolean;
 }
 
 export interface AccountInfo {
   username: string;
   role: string;
+  access_level: "admin" | "member" | "guest";
   is_admin: boolean;
   is_super: boolean;
   is_chat_user: boolean;
+  is_guest: boolean;
   last_login: string | null;
   date_joined: string;
   log_count: number;
@@ -43,6 +47,25 @@ export interface ActivityLogItem {
   action: string;
   detail: string;
   ip: string | null;
+  created_at: string;
+}
+
+export interface MaintenanceStatus {
+  enabled: boolean;
+  reason: string;
+}
+
+export interface AccountLockInfo {
+  username: string;
+  reason: string;
+  locked_at: string | null;
+  locked_by: string | null;
+}
+
+export interface AnnouncementHistoryItem {
+  id: number;
+  kind: "transfer" | "login";
+  content: string;
   created_at: string;
 }
 
@@ -137,6 +160,7 @@ export interface ChatMessage {
   id: string;
   sender_username: string;
   sender_name: string;
+  recipient_username: string | null;
   message_type: "text" | "file";
   content: string;
   file_name: string;
@@ -154,6 +178,7 @@ export interface TransferFile {
   file_type: string;
   remark: string;
   is_public: boolean;
+  visible_until: string | null;
   uploader_name: string;
   is_image: boolean;
   extension: string;
@@ -296,4 +321,44 @@ export interface PagedResult<T> {
   page_size: number;
   count: number;
   pages: number;
+}
+
+// ---------------------------------------------------------------------------
+// 留言板（贴吧式）类型
+// ---------------------------------------------------------------------------
+
+export interface BBSPostListItem {
+  id: string;
+  author_username: string;
+  author_name: string;
+  title: string;
+  content: string;
+  visibility: "public" | "private";
+  visible_to: string[];
+  file_name: string;
+  file_size: number;
+  file_type: string;
+  is_image: boolean;
+  file_url: string;
+  reply_count: number;
+  last_reply_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BBSReplyItem {
+  id: string;
+  author_username: string;
+  author_name: string;
+  content: string;
+  file_name: string;
+  file_size: number;
+  file_type: string;
+  is_image: boolean;
+  file_url: string;
+  created_at: string;
+}
+
+export interface BBSPostDetail extends BBSPostListItem {
+  replies: BBSReplyItem[];
 }

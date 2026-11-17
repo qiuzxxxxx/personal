@@ -13,9 +13,9 @@ const icp = {
 </script>
 
 <template>
-  <footer class="shrink-0 border-t border-slate-200/60 bg-white/55 backdrop-blur-xl">
+  <footer class="shrink-0 border-t bg-white/60 backdrop-blur-xl" style="border-color: var(--apple-border)">
     <div
-      class="mx-auto flex w-full max-w-[1140px] flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 py-2.5 text-[9.5px] text-ink-400 sm:justify-between"
+      class="mx-auto flex w-full max-w-[1140px] flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 py-2 text-[10px] text-ink-400 sm:justify-between"
     >
       <p>
         © 2026 zixxx · 自托管个人空间 ·
@@ -36,7 +36,7 @@ const icp = {
         >
           {{ link.label }}
         </a>
-        <span class="h-2.5 w-px bg-slate-200" aria-hidden="true" />
+        <span class="h-2.5 w-px bg-ink-200" aria-hidden="true" />
         <a
           :href="icp.href"
           target="_blank"

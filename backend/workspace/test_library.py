@@ -1,6 +1,9 @@
 """Regression tests for the private material library."""
 from __future__ import annotations
 
+import io
+import zipfile
+
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -32,6 +35,20 @@ class LibraryTestCase(APITestCase):
         payload = {"file": SimpleUploadedFile(name, content)}
         payload.update(extra)
         return self.client.post("/api/library/materials/", payload, format="multipart")
+
+    def test_openxml_office_upload_is_accepted(self):
+        """A .docx is a zip container and must not be rejected as a mismatch."""
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("[Content_Types].xml", "<Types/>")
+            archive.writestr("word/document.xml", "<document/>")
+        response = self.upload("report.docx", buffer.getvalue())
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()["extension"], "docx")
+
+    def test_mismatched_content_is_rejected(self):
+        response = self.upload("payload.zip", PNG_BYTES)
+        self.assertEqual(response.status_code, 400)
 
     # -- folders ---------------------------------------------------------- #
     def test_folder_lifecycle(self):

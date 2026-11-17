@@ -6,13 +6,18 @@ import {
   ArrowUp,
   Check,
   Pencil,
+  Paperclip,
   Plus,
+  QrCode,
   RotateCcw,
   Search,
   Trash2,
   X,
 } from "lucide-vue-next";
 import { extractApiError } from "@/api/client";
+import { detachTaskMaterial, fetchTaskMaterials } from "@/api/workspace";
+import type { LibraryMaterial } from "@/api/workspace";
+import PhoneUploadDialog from "@/components/PhoneUploadDialog.vue";
 import { useToastStore } from "@/stores/toast";
 import { newClientRequestId, useWorkspaceStore } from "@/stores/workspace";
 import type { TaskPriority, TaskStatus, WorkspaceTask } from "@/types";
@@ -34,8 +39,14 @@ const editDescription = ref("");
 const editStatus = ref<TaskStatus>("todo");
 const editPriority = ref<TaskPriority>("normal");
 const editDate = ref("");
+const editDue = ref("");
 const editProject = ref("");
+const editTags = ref<string[]>([]);
+const taskMaterials = ref<LibraryMaterial[]>([]);
+const attachmentsLoading = ref(false);
+const showTaskPhoneUpload = ref(false);
 const busy = ref(false);
+const page = ref(1);
 
 const statusOptions: { value: Filter; label: string }[] = [
   { value: "all", label: "全部" },
@@ -54,10 +65,17 @@ async function refresh(): Promise<void> {
       project: projectFilter.value || undefined,
       q: keyword.value.trim() || undefined,
       deleted: filter.value === "trash",
+      page: page.value,
+      page_size: 50,
     });
   } catch (error) {
     toast.error(extractApiError(error));
   }
+}
+
+async function changePage(next: number): Promise<void> {
+  page.value = Math.min(Math.max(1, next), Math.max(1, store.taskPages));
+  await refresh();
 }
 
 async function addTask(): Promise<void> {
@@ -78,14 +96,29 @@ async function addTask(): Promise<void> {
   }
 }
 
-function startEdit(task: WorkspaceTask): void {
+async function startEdit(task: WorkspaceTask): Promise<void> {
   editingId.value = task.id;
   editTitle.value = task.title;
   editDescription.value = task.description;
   editStatus.value = task.status;
   editPriority.value = task.priority;
   editDate.value = task.scheduled_date || "";
+  editDue.value = task.due_at
+    ? new Date(new Date(task.due_at).getTime() - new Date(task.due_at).getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16)
+    : "";
   editProject.value = task.project || "";
+  editTags.value = task.tags.map((tag) => tag.id);
+  attachmentsLoading.value = true;
+  try {
+    taskMaterials.value = await fetchTaskMaterials(task.id);
+  } catch (error) {
+    toast.error(extractApiError(error));
+    taskMaterials.value = [];
+  } finally {
+    attachmentsLoading.value = false;
+  }
 }
 
 function cancelEdit(): void {
@@ -105,7 +138,9 @@ async function saveEdit(task: WorkspaceTask): Promise<void> {
       status: editStatus.value,
       priority: editPriority.value,
       scheduled_date: editDate.value || null,
+      due_at: editDue.value ? new Date(editDue.value).toISOString() : null,
       project: editProject.value || null,
+      tags: editTags.value,
       version: task.version,
     });
     editingId.value = null;
@@ -114,6 +149,22 @@ async function saveEdit(task: WorkspaceTask): Promise<void> {
     toast.error(extractApiError(error));
   } finally {
     busy.value = false;
+  }
+}
+
+async function refreshTaskMaterials(): Promise<void> {
+  if (!editingId.value) return;
+  taskMaterials.value = await fetchTaskMaterials(editingId.value);
+}
+
+async function detachMaterial(material: LibraryMaterial): Promise<void> {
+  if (!editingId.value) return;
+  try {
+    await detachTaskMaterial(editingId.value, material.id);
+    taskMaterials.value = taskMaterials.value.filter((item) => item.id !== material.id);
+    toast.success("已从任务中移除资料，原文件仍保留在资料库。");
+  } catch (error) {
+    toast.error(extractApiError(error));
   }
 }
 
@@ -158,11 +209,17 @@ async function move(task: WorkspaceTask, offset: number): Promise<void> {
   }
 }
 
-watch(filter, () => void refresh());
-watch(projectFilter, () => void refresh());
+watch(filter, () => {
+  page.value = 1;
+  void refresh();
+});
+watch(projectFilter, () => {
+  page.value = 1;
+  void refresh();
+});
 
 onMounted(async () => {
-  await store.loadProjects();
+  await Promise.all([store.loadProjects(), store.loadTags()]);
   await refresh();
   const editId = route.query.edit;
   if (typeof editId === "string" && editId) {
@@ -383,6 +440,14 @@ onMounted(async () => {
               <input
                 v-model="editDate"
                 type="date"
+                aria-label="计划日期"
+                class="rounded-lg border border-slate-200 px-2 py-1.5 text-[12px] outline-none"
+              />
+              <input
+                v-model="editDue"
+                type="datetime-local"
+                aria-label="截止时间"
+                title="截止时间"
                 class="rounded-lg border border-slate-200 px-2 py-1.5 text-[12px] outline-none"
               />
               <select
@@ -393,6 +458,14 @@ onMounted(async () => {
                 <option v-for="project in store.projects" :key="project.id" :value="project.id">
                   {{ project.name }}
                 </option>
+              </select>
+              <select
+                v-model="editTags"
+                multiple
+                aria-label="任务标签"
+                class="min-h-16 rounded-lg border border-slate-200 px-2 py-1.5 text-[12px] outline-none"
+              >
+                <option v-for="tag in store.tags" :key="tag.id" :value="tag.id">#{{ tag.name }}</option>
               </select>
               <div class="ml-auto flex items-center gap-2">
                 <button
@@ -414,14 +487,52 @@ onMounted(async () => {
                 </button>
               </div>
             </div>
+            <div class="rounded-xl bg-slate-50 p-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="flex items-center gap-1.5 text-[12px] font-medium text-ink-600">
+                  <Paperclip :size="14" />
+                  任务资料
+                </p>
+                <button type="button" class="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-[11.5px] font-medium text-accent-700 hover:bg-accent-50" @click="showTaskPhoneUpload = true">
+                  <QrCode :size="13" />
+                  手机上传到任务
+                </button>
+              </div>
+              <p v-if="attachmentsLoading" class="mt-2 text-[11px] text-ink-400">正在加载资料…</p>
+              <p v-else-if="!taskMaterials.length" class="mt-2 text-[11px] text-ink-400">暂无关联资料。也可在资料库上传时选择此任务。</p>
+              <ul v-else class="mt-2 space-y-1.5">
+                <li v-for="material in taskMaterials" :key="material.id" class="flex items-center gap-2 rounded-lg bg-white px-2.5 py-2 text-[11.5px] text-ink-600">
+                  <span class="min-w-0 flex-1 truncate">{{ material.original_name }}</span>
+                  <button type="button" class="min-h-8 rounded-lg px-2 text-rose-500 hover:bg-rose-50" :aria-label="`从任务移除 ${material.original_name}`" @click="detachMaterial(material)">移除关联</button>
+                </li>
+              </ul>
+            </div>
           </div>
         </li>
       </ul>
+
+      <nav
+        v-if="store.taskPages > 1"
+        class="mt-5 flex items-center justify-center gap-3"
+        aria-label="任务分页"
+      >
+        <button type="button" class="btn-secondary !h-9 !min-h-9 !px-3" :disabled="store.taskPage <= 1" @click="changePage(store.taskPage - 1)">上一页</button>
+        <span class="text-[12px] tabular-nums text-ink-500">第 {{ store.taskPage }} / {{ store.taskPages }} 页</span>
+        <button type="button" class="btn-secondary !h-9 !min-h-9 !px-3" :disabled="store.taskPage >= store.taskPages" @click="changePage(store.taskPage + 1)">下一页</button>
+      </nav>
 
       <p v-if="filter === 'trash'" class="mt-4 flex items-center gap-1.5 text-[12px] text-ink-400">
         <RotateCcw :size="13" />
         回收站中的任务不会出现在今日清单里，恢复后重新按计划日期显示。
       </p>
     </div>
+
+    <PhoneUploadDialog
+      v-if="showTaskPhoneUpload && editingId"
+      :task-id="editingId"
+      target-label="当前任务"
+      @close="showTaskPhoneUpload = false"
+      @received="refreshTaskMaterials"
+    />
   </div>
 </template>

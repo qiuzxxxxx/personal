@@ -62,11 +62,38 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
   const token = getStoredToken();
-  if (token) {
+  if (token && !config.headers.has("Authorization")) {
     config.headers.Authorization = `Token ${token}`;
   }
   return config;
 });
+
+let redirectingAfterRevocation = false;
+
+api.interceptors.response.use(
+  (response) => response,
+  (error: unknown) => {
+    if (axios.isAxiosError(error)) {
+      const requestUrl = String(error.config?.url || "");
+      const requestToken = error.config?.headers?.get("Authorization");
+      if (
+        error.response?.status === 401 &&
+        !requestUrl.includes("/auth/login/") &&
+        !requestUrl.includes("/auth/logout/") &&
+        requestToken === `Token ${getStoredToken()}`
+      ) {
+        setStoredToken("");
+        setStoredUser(null);
+        if (!redirectingAfterRevocation && location.pathname !== "/") {
+          redirectingAfterRevocation = true;
+          const redirect = `${location.pathname}${location.search}${location.hash}`;
+          location.assign(`/?redirect=${encodeURIComponent(redirect)}`);
+        }
+      }
+    }
+    return Promise.reject(error);
+  },
+);
 
 export function bearerHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};

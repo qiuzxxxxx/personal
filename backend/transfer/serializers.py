@@ -20,6 +20,7 @@ class TransferFileSerializer(serializers.ModelSerializer):
             "file_type",
             "remark",
             "is_public",
+            "visible_until",
             "uploader_name",
             "is_image",
             "extension",

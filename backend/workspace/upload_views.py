@@ -1,4 +1,4 @@
-﻿"""Phone upload APIs.
+"""Phone upload APIs.
 
 Desktop owner endpoints manage the session; the phone endpoints only deliver
 files into the session they were given.
@@ -21,9 +21,9 @@ from rest_framework.decorators import (
     permission_classes,
 )
 from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.permissions import CanUseWorkspace
 from accounts.models import AccountSecurity
 from config.http import error, no_store
 
@@ -103,7 +103,7 @@ def revoke_session(session: UploadSession) -> None:
 # owner endpoints
 # --------------------------------------------------------------------------- #
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def session_create(request):
     folder = None
     task = None
@@ -143,9 +143,9 @@ def session_create(request):
             seconds=getattr(settings, "UPLOAD_SESSION_TTL_SECONDS", 600)
         ),
         max_files=getattr(settings, "UPLOAD_SESSION_MAX_FILES", 20),
-        max_bytes=getattr(settings, "UPLOAD_SESSION_MAX_BYTES", 500 * 1024 * 1024),
+        max_bytes=getattr(settings, "UPLOAD_SESSION_MAX_BYTES", 1024 * 1024 * 1024),
         max_file_bytes=getattr(
-            settings, "UPLOAD_SESSION_MAX_FILE_BYTES", 100 * 1024 * 1024
+            settings, "UPLOAD_SESSION_MAX_FILE_BYTES", 1024 * 1024 * 1024
         ),
         auth_version=AccountSecurity.version_for(request.user),
     )
@@ -163,7 +163,7 @@ def session_create(request):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def session_status(request, session_id):
     session = UploadSession.objects.filter(pk=session_id, owner=request.user).first()
     if session is None:
@@ -178,7 +178,7 @@ def session_status(request, session_id):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def session_revoke(request, session_id):
     session = UploadSession.objects.filter(pk=session_id, owner=request.user).first()
     if session is None:
@@ -205,7 +205,7 @@ def session_guard(request):
 
 @api_view(["GET"])
 @authentication_classes([UploadSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def session_info(request):
     """The phone reads its own session limits without touching owner data."""
     guard = session_guard(request)
@@ -222,7 +222,7 @@ def session_info(request):
 
 @api_view(["POST"])
 @authentication_classes([UploadSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def receipt_prepare(request):
     guard = session_guard(request)
     if guard is not None:
@@ -313,7 +313,7 @@ def receipt_prepare(request):
 
 @api_view(["GET"])
 @authentication_classes([UploadSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def receipt_status(request, receipt_id):
     session = request.upload_session
     receipt = UploadReceipt.objects.filter(pk=receipt_id, session=session).first()
@@ -325,7 +325,7 @@ def receipt_status(request, receipt_id):
 @api_view(["POST"])
 @authentication_classes([UploadSessionAuthentication])
 @parser_classes([MultiPartParser, FormParser])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def receipt_content(request, receipt_id):
     guard = session_guard(request)
     if guard is not None:
@@ -445,6 +445,12 @@ def receipt_content(request, receipt_id):
                 used_bytes=F("used_bytes") - receipt.declared_size + actual_size,
             )
     except IntegrityError:
+        # The file is already on disk; remove it again so that a failed
+        # upload does not leave an orphan behind.
+        try:
+            material.storage_key.delete(save=False)
+        except Exception:  # pragma: no cover - best effort cleanup
+            pass
         return fail("commit_failed", 409)
 
     receipt.refresh_from_db()

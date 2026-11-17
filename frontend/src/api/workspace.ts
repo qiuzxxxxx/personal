@@ -1,4 +1,4 @@
-import api from "./client";
+import api, { requestPath } from "./client";
 import type {
   PagedResult,
   TodayPayload,
@@ -200,6 +200,14 @@ export async function deleteFolder(id: string): Promise<LibraryFolder> {
   return data;
 }
 
+export async function updateFolder(
+  id: string,
+  payload: { name: string; version: number },
+): Promise<LibraryFolder> {
+  const { data } = await api.patch<LibraryFolder>(`/library/folders/${id}/`, payload);
+  return data;
+}
+
 export async function fetchMaterials(query: {
   folder?: string;
   tag?: string;
@@ -248,8 +256,36 @@ export async function restoreMaterial(id: string): Promise<LibraryMaterial> {
   return data;
 }
 
+export async function updateMaterial(
+  id: string,
+  payload: {
+    original_name?: string;
+    folder?: string | null;
+    remark?: string;
+    version: number;
+  },
+): Promise<LibraryMaterial> {
+  const { data } = await api.patch<LibraryMaterial>(`/library/materials/${id}/`, payload);
+  return data;
+}
+
+export async function fetchTaskMaterials(taskId: string): Promise<LibraryMaterial[]> {
+  const { data } = await api.get<LibraryMaterial[]>(`/tasks/${taskId}/materials/`);
+  return data;
+}
+
+export async function attachTaskMaterial(taskId: string, materialId: string): Promise<void> {
+  await api.post(`/tasks/${taskId}/materials/`, { material: materialId });
+}
+
+export async function detachTaskMaterial(taskId: string, materialId: string): Promise<void> {
+  await api.delete(`/tasks/${taskId}/materials/${materialId}/`);
+}
+
 export async function downloadMaterial(material: LibraryMaterial): Promise<void> {
-  const response = await api.get<Blob>(material.download_url, { responseType: "blob" });
+  const response = await api.get<Blob>(requestPath(material.download_url), {
+    responseType: "blob",
+  });
   const url = URL.createObjectURL(response.data);
   const anchor = document.createElement("a");
   anchor.href = url;

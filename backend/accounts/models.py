@@ -1,6 +1,32 @@
 from django.contrib.auth.models import User
 from django.db import models
 
+from .models_maintenance import AccountLock, SiteMaintenance  # noqa: F401
+
+
+class AccountProfile(models.Model):
+    """Account-level access selected by the highest administrator."""
+
+    ADMIN = "admin"
+    MEMBER = "member"
+    GUEST = "guest"
+    ACCESS_CHOICES = [
+        (ADMIN, "管理员"),
+        (MEMBER, "成员"),
+        (GUEST, "访客"),
+    ]
+
+    user = models.OneToOneField(
+        User, on_delete=models.CASCADE, related_name="account_profile"
+    )
+    access_level = models.CharField(
+        max_length=16, choices=ACCESS_CHOICES, default=MEMBER, db_index=True
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"{self.user.username}:{self.access_level}"
+
 
 class AccountSecurity(models.Model):
     """Security state that invalidates delivery credentials when it changes."""

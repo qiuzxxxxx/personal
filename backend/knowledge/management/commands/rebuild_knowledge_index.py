@@ -1,7 +1,9 @@
 """Rebuild the knowledge index from the stored originals."""
 from __future__ import annotations
 
-from django.core.management.base import BaseCommand
+import uuid
+
+from django.core.management.base import BaseCommand, CommandError
 
 from knowledge.jobs import reindex_document
 from knowledge.models import KnowledgeDocument
@@ -28,7 +30,12 @@ class Command(BaseCommand):
                 return
             queryset = queryset.filter(owner=user)
         if options.get("document"):
-            queryset = queryset.filter(pk=options["document"])
+            raw = str(options["document"]).strip()
+            try:
+                document_id = uuid.UUID(raw)
+            except ValueError:
+                raise CommandError(f"--document 必须是 UUID，当前为 {raw!r}。") from None
+            queryset = queryset.filter(pk=document_id)
 
         count = 0
         for document in queryset.select_related("current_revision"):

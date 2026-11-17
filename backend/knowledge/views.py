@@ -27,6 +27,7 @@ from .memories import (
     accept_memory,
     create_memory,
     current_epoch,
+    delete_memory,
     disable_memory,
     export_memories,
     forget_memory,
@@ -420,6 +421,10 @@ def document_restore(request, document_id):
         deleted_at=None, version=document.version + 1, updated_at=timezone.now()
     )
     document.refresh_from_db()
+    # A restored entry must be searchable again: queue a fresh revision so
+    # the chunks are rebuilt even when the trash cleanup dropped them.
+    reindex_document(document)
+    document.refresh_from_db()
     return no_store(Response(KnowledgeDocumentSerializer(document).data))
 
 
@@ -589,7 +594,7 @@ def memory_list(request):
     return Response(MemorySerializer(memory).data, status=201)
 
 
-@api_view(["GET", "PATCH"])
+@api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([CanUseAgent])
 def memory_detail(request, memory_id):
     memory = PersonalMemory.objects.filter(
@@ -599,6 +604,20 @@ def memory_detail(request, memory_id):
         return error("记忆不存在。", 404, code="not_found")
     if request.method == "GET":
         return no_store(Response(MemorySerializer(memory).data))
+
+    if request.method == "DELETE":
+        version = request.data.get("version") if hasattr(request.data, "get") else None
+        if version is None:
+            return error("彻底删除必须提交 version。", 400, code="version_required")
+        try:
+            expected_version = parse_int(version, "version", minimum=1)
+            delete_memory(memory, expected_version=expected_version)
+        except BadRequest as exc:
+            return error(str(exc), 400, code="invalid_payload")
+        except MemoryError as exc:
+            status = 409 if exc.code == "version_conflict" else 400
+            return error(exc.detail, status, code=exc.code)
+        return no_store(Response(status=204))
 
     serializer = MemoryPatchSerializer(data=request.data)
     if not serializer.is_valid():

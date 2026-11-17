@@ -108,10 +108,17 @@ class KnowledgeDocumentWriteSerializer(serializers.Serializer):
 
 
 class KnowledgeDocumentPatchSerializer(serializers.Serializer):
+    """Partial update payload.
+
+    ``collection`` deliberately carries no default: with a default it would
+    always be present in ``validated_data`` and every title-only PATCH would
+    silently move the document out of its collection.
+    """
+
     title = serializers.CharField(
         max_length=200, allow_blank=False, trim_whitespace=True, required=False
     )
-    collection = serializers.UUIDField(required=False, allow_null=True, default=None)
+    collection = serializers.UUIDField(required=False, allow_null=True)
     manual_body = serializers.CharField(
         max_length=500000, required=False, allow_blank=True, default=None
     )
@@ -178,14 +185,17 @@ class MemoryWriteSerializer(serializers.Serializer):
 
 
 class MemoryPatchSerializer(serializers.Serializer):
+    """Partial update payload.
+
+    No field carries a default, so ``validated_data`` only contains the keys
+    the client actually sent.  A defaulted ``project`` would be rewritten to
+    None on every edit and would bypass the scope/project consistency check.
+    """
+
     content = serializers.CharField(
         max_length=20000, allow_blank=False, trim_whitespace=True, required=False
     )
-    kind = serializers.ChoiceField(
-        choices=["fact", "preference", "goal"], required=False, default=None
-    )
-    scope_type = serializers.ChoiceField(
-        choices=["global", "project"], required=False, default=None
-    )
-    project = serializers.UUIDField(required=False, allow_null=True, default=None)
+    kind = serializers.ChoiceField(choices=["fact", "preference", "goal"], required=False)
+    scope_type = serializers.ChoiceField(choices=["global", "project"], required=False)
+    project = serializers.UUIDField(required=False, allow_null=True)
     version = serializers.IntegerField(min_value=1)

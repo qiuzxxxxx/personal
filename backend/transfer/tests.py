@@ -87,3 +87,84 @@ class AnonymousBudgetTestCase(APITestCase):
                 HTTP_X_FORWARDED_FOR="203.0.113.10, 198.51.100.1",
             )
         self.assertEqual(other.status_code, 201)
+
+
+class LoginAnnouncementTestCase(APITestCase):
+    def setUp(self):
+        self.qzx = User.objects.create_user(username="qzx", password="qzx-test-123456")
+        self.member = User.objects.create_user(username="member", password="member-test-123456")
+
+    def test_public_can_read_but_cannot_publish(self):
+        response = self.client.get("/api/transfer/login-announcement/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["content"], "")
+        denied = self.client.put(
+            "/api/transfer/login-announcement/", {"content": "维护公告"}, format="json"
+        )
+        self.assertEqual(denied.status_code, 403)
+
+    def test_only_highest_admin_can_publish(self):
+        self.client.force_authenticate(self.member)
+        denied = self.client.put(
+            "/api/transfer/login-announcement/", {"content": "无权发布"}, format="json"
+        )
+        self.assertEqual(denied.status_code, 403)
+
+        self.client.force_authenticate(self.qzx)
+        saved = self.client.put(
+            "/api/transfer/login-announcement/", {"content": "今晚维护"}, format="json"
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertEqual(saved.json()["content"], "今晚维护")
+
+        self.client.force_authenticate(user=None)
+        public = self.client.get("/api/transfer/login-announcement/")
+        self.assertEqual(public.json()["content"], "今晚维护")
+
+
+class AnnouncementHistoryTestCase(APITestCase):
+    def setUp(self):
+        self.qzx = User.objects.create_user(username="qzx", password="qzx-test-123456")
+        self.client.force_authenticate(self.qzx)
+
+    def publish(self, kind: str, content: str):
+        path = (
+            "/api/transfer/login-announcement/"
+            if kind == "login"
+            else "/api/transfer/announcement/"
+        )
+        return self.client.put(path, {"content": content}, format="json")
+
+    def history(self, kind: str | None = None):
+        params = {"kind": kind} if kind else None
+        return self.client.get(
+            "/api/transfer/announcement-history/", params
+        )
+
+    def test_public_history_keeps_publications_newest_first(self):
+        self.assertEqual(self.publish("login", "第一条").status_code, 200)
+        self.assertEqual(self.publish("login", "第二条").status_code, 200)
+        self.client.force_authenticate(user=None)
+
+        response = self.history("login")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [row["content"] for row in response.json()], ["第二条", "第一条"]
+        )
+        self.assertEqual({row["kind"] for row in response.json()}, {"login"})
+
+    def test_duplicate_saves_and_withdrawals_do_not_add_history(self):
+        self.publish("transfer", "公告 A")
+        self.publish("transfer", "公告 A")
+        self.publish("transfer", "")
+        rows = self.history("transfer").json()
+        self.assertEqual([row["content"] for row in rows], ["公告 A"])
+
+    def test_history_can_mix_kinds_or_filter_one(self):
+        self.publish("login", "登录公告")
+        self.publish("transfer", "中转公告")
+        mixed = self.history().json()
+        self.assertEqual(len(mixed), 2)
+        self.assertEqual({row["kind"] for row in mixed}, {"login", "transfer"})
+        self.assertEqual(len(self.history("login").json()), 1)
+        self.assertEqual(len(self.history("transfer").json()), 1)

@@ -9,7 +9,7 @@ from __future__ import annotations
 from django.test import TestCase
 
 from knowledge.ingestion import CHUNK_OVERLAP_CHARS, CHUNK_TARGET_CHARS, chunk_segments
-from knowledge.parsing import Segment
+from knowledge.parsing import Segment, _markdown_segments
 
 
 def covered_characters(chunks: list[dict], source: str) -> int:
@@ -26,6 +26,36 @@ def covered_characters(chunks: list[dict], source: str) -> int:
         for index in range(start, min(end, len(source))):
             covered.add(index)
     return len(covered)
+
+
+class MarkdownOffsetTestCase(TestCase):
+    """The recorded character ranges must point at the real text."""
+
+    def test_offsets_point_at_the_source_text(self):
+        source = "# 标题一\n\n第一段正文内容。\n\n## 标题二\n\n第二段正文内容。\n"
+        segments = _markdown_segments(source)
+        self.assertTrue(segments)
+        for segment in segments:
+            fragment = source[segment.char_start : segment.char_end]
+            self.assertTrue(
+                segment.text in fragment,
+                f"片段 {segment.text!r} 不在 {fragment!r} 中",
+            )
+
+    def test_body_paragraph_starts_at_its_real_position(self):
+        source = "# 标题\n\n段落内容\n"
+        segments = _markdown_segments(source)
+        body = next(item for item in segments if item.text == "段落内容")
+        self.assertEqual(source[body.char_start : body.char_start + len(body.text)], body.text)
+        self.assertEqual(body.char_start, source.index("段落内容"))
+
+    def test_second_heading_offset_is_not_drifted(self):
+        source = "# 一\n\n正文一\n\n## 二\n\n正文二\n"
+        segments = _markdown_segments(source)
+        heading = next(item for item in segments if item.text == "二")
+        fragment = source[heading.char_start : heading.char_end]
+        self.assertIn("二", fragment)
+        self.assertEqual(heading.char_start, source.index("## 二"))
 
 
 class ChunkingTestCase(TestCase):

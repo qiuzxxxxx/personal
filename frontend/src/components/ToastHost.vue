@@ -12,20 +12,20 @@ const toast = useToastStore();
         <div
           v-for="item in toast.items"
           :key="item.id"
-          class="pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-2xl border bg-white/95 px-4 py-3 shadow-[0_18px_50px_-20px_rgba(15,23,42,0.35)] backdrop-blur-xl"
+          class="pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-2xl border bg-white/95 px-4 py-3 shadow-elevated backdrop-blur-xl"
           :class="{
-            'border-emerald-200/80': item.kind === 'success',
-            'border-rose-200/80': item.kind === 'error',
-            'border-slate-200/80': item.kind === 'info',
+            'border-green-200/80': item.kind === 'success',
+            'border-red-200/80': item.kind === 'error',
+            'border-blue-200/80': item.kind === 'info',
           }"
           role="status"
         >
           <span
             class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
             :class="{
-              'bg-emerald-50 text-emerald-600': item.kind === 'success',
-              'bg-rose-50 text-rose-600': item.kind === 'error',
-              'bg-sky-50 text-sky-600': item.kind === 'info',
+              'bg-green-50 text-green-600': item.kind === 'success',
+              'bg-red-50 text-red-600': item.kind === 'error',
+              'bg-blue-50 text-blue-600': item.kind === 'info',
             }"
           >
             <CircleCheck v-if="item.kind === 'success'" :size="15" />
@@ -35,7 +35,7 @@ const toast = useToastStore();
           <p class="min-w-0 flex-1 pt-0.5 text-[13px] leading-5 text-ink-700">{{ item.message }}</p>
           <button
             type="button"
-            class="mt-0.5 rounded-md p-1 text-ink-400 transition hover:bg-slate-100 hover:text-ink-700"
+            class="mt-0.5 rounded-md p-1 text-ink-400 transition hover:bg-black/[0.04] hover:text-ink-700"
             aria-label="关闭通知"
             @click="toast.dismiss(item.id)"
           >

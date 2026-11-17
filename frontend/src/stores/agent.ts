@@ -15,6 +15,7 @@ export const useAgentStore = defineStore("agent", () => {
   const loadingConversations = ref(false);
   const loadingMessages = ref(false);
   const loaded = ref(false);
+  let sessionEpoch = 0;
   // 知识范围开关随会话保存，切换会话时随之恢复。
   const knowledgeScope = ref<KnowledgeScope>({
     enabled: false,
@@ -32,18 +33,23 @@ export const useAgentStore = defineStore("agent", () => {
     if (loadingConversations.value) return;
     if (loaded.value && !force) return;
     loadingConversations.value = true;
+    const epoch = sessionEpoch;
     try {
-      conversations.value = await listConversations();
+      const items = await listConversations();
+      if (epoch !== sessionEpoch) return;
+      conversations.value = items;
       loaded.value = true;
     } finally {
-      loadingConversations.value = false;
+      if (epoch === sessionEpoch) loadingConversations.value = false;
     }
   }
 
   async function loadConversation(id: string): Promise<void> {
     loadingMessages.value = true;
+    const epoch = sessionEpoch;
     try {
       const detail = await getConversation(id);
+      if (epoch !== sessionEpoch) return;
       activeId.value = detail.id;
       activeTitle.value = detail.title;
       messages.value = detail.messages;
@@ -57,7 +63,7 @@ export const useAgentStore = defineStore("agent", () => {
         strict_sources: Boolean(detail.strict_sources),
       };
     } finally {
-      loadingMessages.value = false;
+      if (epoch === sessionEpoch) loadingMessages.value = false;
     }
   }
 
@@ -116,8 +122,10 @@ export const useAgentStore = defineStore("agent", () => {
   }
 
   async function refreshConversations(): Promise<void> {
+    const epoch = sessionEpoch;
     try {
       const items = await listConversations();
+      if (epoch !== sessionEpoch) return;
       conversations.value = items;
       loaded.value = true;
     } catch {
@@ -126,17 +134,22 @@ export const useAgentStore = defineStore("agent", () => {
   }
 
   async function removeConversation(id: string): Promise<void> {
+    const epoch = sessionEpoch;
     await deleteConversationRequest(id);
+    if (epoch !== sessionEpoch) return;
     conversations.value = conversations.value.filter((item) => item.id !== id);
     if (activeId.value === id) startNew();
   }
 
   function reset(): void {
+    sessionEpoch += 1;
     conversations.value = [];
     activeId.value = null;
     activeTitle.value = "新对话";
     messages.value = [];
     loaded.value = false;
+    loadingConversations.value = false;
+    loadingMessages.value = false;
     knowledgeScope.value = {
       enabled: false,
       scope: "all",

@@ -8,6 +8,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  Megaphone,
   FolderOpen,
   Globe2,
   Loader2,
@@ -23,11 +24,14 @@ import {
   X,
 } from "lucide-vue-next";
 import ModalShell from "@/components/ModalShell.vue";
+import AnnouncementBody from "@/components/AnnouncementBody.vue";
+import brandLogo from "@/assets/brand/zixxx-logo.png";
 import FileIcon from "@/components/FileIcon.vue";
 import TransferThumbnail from "@/components/TransferThumbnail.vue";
 import FilePreviewModal from "@/components/FilePreviewModal.vue";
 import UsageTermsModal from "@/components/UsageTermsModal.vue";
 import { useAuthStore } from "@/stores/auth";
+import { useAnnouncementStore } from "@/stores/announcements";
 import { useToastStore } from "@/stores/toast";
 import api, {
   extractApiError,
@@ -36,8 +40,12 @@ import api, {
 } from "@/api/client";
 import {
   deleteTransferFile,
+  getLoginAnnouncement,
+  getTransferAnnouncement,
   listTransferFiles,
   patchTransferFile,
+  saveLoginAnnouncement,
+  saveTransferAnnouncement,
   uploadTransferFile,
 } from "@/api/transfer";
 import {
@@ -52,11 +60,14 @@ import type { TransferFile } from "@/types";
 
 const router = useRouter();
 const auth = useAuthStore();
+const announcements = useAnnouncementStore();
 const toast = useToastStore();
 
 defineOptions({ name: "TransferStation" });
 
 const files = ref<TransferFile[]>([]);
+const announcement = ref("");
+const loginAnnouncement = ref("");
 const loading = ref(true);
 const loadError = ref("");
 const search = ref("");
@@ -78,15 +89,21 @@ const editOpen = ref(false);
 const editing = ref<TransferFile | null>(null);
 const editName = ref("");
 const editRemark = ref("");
+const editVisibleUntil = ref("");
 const savingEdit = ref(false);
 const pendingDelete = ref<TransferFile | null>(null);
 const deleting = ref(false);
+const announcementEditorOpen = ref(false);
+const announcementKind = ref<"transfer" | "login">("transfer");
+const announcementDraft = ref("");
+const savingAnnouncement = ref(false);
 const agreed = ref(termsAccepted());
 const termsOpen = ref(false);
 const termsAcceptMode = ref(false);
 const previewTarget = ref<TransferFile | null>(null);
+const announcementHistoryOpen = ref(false);
 
-const MAX_BYTES = 500 * 1024 * 1024;
+const MAX_BYTES = 1024 * 1024 * 1024;
 const isAdmin = computed(() => auth.isSuper);
 
 const publicCount = computed(() => files.value.filter((file) => file.is_public).length);
@@ -125,7 +142,19 @@ const uploadActionLabel = computed(() => {
 async function loadFiles(silent = false): Promise<void> {
   if (!silent) loading.value = true;
   try {
-    files.value = await listTransferFiles();
+    const [fileResult, announcementResult, loginAnnouncementResult] = await Promise.allSettled([
+      listTransferFiles(),
+      getTransferAnnouncement(),
+      getLoginAnnouncement(),
+    ]);
+    if (fileResult.status === "rejected") throw fileResult.reason;
+    files.value = fileResult.value;
+    if (announcementResult.status === "fulfilled") {
+      announcement.value = announcementResult.value.content;
+    }
+    if (loginAnnouncementResult.status === "fulfilled") {
+      loginAnnouncement.value = loginAnnouncementResult.value.content;
+    }
     loadError.value = "";
   } catch (error) {
     loadError.value = extractApiError(error);
@@ -133,6 +162,35 @@ async function loadFiles(silent = false): Promise<void> {
   } finally {
     loading.value = false;
     refreshBusy.value = false;
+  }
+}
+
+function openAnnouncementEditor(kind: "transfer" | "login"): void {
+  if (!isAdmin.value) return;
+  announcementKind.value = kind;
+  announcementDraft.value = kind === "transfer" ? announcement.value : loginAnnouncement.value;
+  announcementEditorOpen.value = true;
+}
+
+async function saveAnnouncement(): Promise<void> {
+  if (!isAdmin.value || savingAnnouncement.value) return;
+  savingAnnouncement.value = true;
+  try {
+    const content = announcementDraft.value.trim();
+    const result = announcementKind.value === "transfer"
+      ? await saveTransferAnnouncement(content)
+      : await saveLoginAnnouncement(content);
+    if (announcementKind.value === "transfer") announcement.value = result.content;
+    else loginAnnouncement.value = result.content;
+    announcementEditorOpen.value = false;
+    // 侧边栏“公告”入口与弹窗共用 store，发布后立即同步并标记已读。
+    void announcements.load(true);
+    void announcements.loadHistory(true).then(() => announcements.markSeen());
+    toast.success(content ? "公告已发布" : "公告已撤下");
+  } catch (error) {
+    toast.error(extractApiError(error));
+  } finally {
+    savingAnnouncement.value = false;
   }
 }
 
@@ -195,7 +253,7 @@ function selectFile(file: File | null): void {
     return;
   }
   if (file.size > MAX_BYTES) {
-    toast.error("文件超过 500 MB");
+    toast.error("文件超过 1 GB");
     return;
   }
   selectedFile.value = file;
@@ -260,7 +318,7 @@ async function upload(): Promise<void> {
     if (wasPublic) {
       toast.success("已上传，所有人现在都可以下载");
     } else {
-      toast.success("已私密投递，只有最高管理员（qzx）可以看到这个文件");
+      toast.success("已私密投递，只有最高管理员可以看到这个文件");
     }
   } catch (error) {
     toast.error(extractApiError(error));
@@ -317,6 +375,9 @@ function openEdit(file: TransferFile): void {
   editing.value = file;
   editName.value = file.original_name;
   editRemark.value = file.remark;
+  editVisibleUntil.value = file.visible_until
+    ? new Date(new Date(file.visible_until).getTime() - new Date(file.visible_until).getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+    : "";
   editOpen.value = true;
 }
 
@@ -332,6 +393,7 @@ async function saveEdit(): Promise<void> {
     const updated = await patchTransferFile(editing.value.id, {
       original_name: name,
       remark: editRemark.value.trim(),
+      visible_until: editVisibleUntil.value ? new Date(editVisibleUntil.value).toISOString() : null,
     });
     replaceFile(updated);
     editOpen.value = false;
@@ -396,9 +458,11 @@ watch(
     <div class="relative z-10 mx-auto w-full max-w-[1140px] px-4 pb-14 pt-6 sm:px-7 sm:pt-9">
       <header class="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div class="flex items-start gap-3.5">
-          <span class="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-ink-900 to-slate-700 text-white shadow-[0_14px_30px_-18px_rgba(15,23,42,.7)] sm:flex">
-            <UploadCloud :size="22" :stroke-width="1.7" />
-          </span>
+          <img
+            :src="brandLogo"
+            alt="zixxx 标志"
+            class="h-auto w-[108px] shrink-0 object-contain sm:w-[176px]"
+          />
           <div>
             <div class="flex flex-wrap items-center gap-2">
               <span class="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent-600">File relay</span>
@@ -415,7 +479,7 @@ watch(
               文件中转站
             </h1>
             <p class="mt-1.5 max-w-[560px] text-[12.5px] leading-6 text-ink-500">
-              打开即传，无需登录。选择公开分享，或只投递给唯一的 qzx。
+              打开即传，无需登录。选择公开分享，或只投递给最高管理员。
             </p>
           </div>
         </div>
@@ -465,6 +529,38 @@ watch(
         </div>
       </header>
 
+      <div v-if="isAdmin" class="mt-4 flex flex-wrap items-center gap-2" aria-label="公告管理">
+        <button type="button" class="btn-secondary !h-9 !min-h-9 !px-3 !text-[11px]" @click="openAnnouncementEditor('transfer')">
+          <Megaphone :size="13" />
+          中转站公告
+        </button>
+        <button type="button" class="btn-secondary !h-9 !min-h-9 !px-3 !text-[11px]" @click="openAnnouncementEditor('login')">
+          <LogIn :size="13" />
+          登录页公告
+        </button>
+      </div>
+
+      <section
+        v-if="announcement"
+        class="mx-auto mt-5 w-full max-w-3xl rounded-2xl border border-accent-100/80 bg-gradient-to-r from-accent-50/80 to-blue-50/40 px-4 py-3.5 text-center text-[12px] leading-5 text-ink-700 shadow-sm backdrop-blur-sm"
+        aria-label="站点公告"
+      >
+        <div class="flex flex-col items-center gap-1.5">
+          <span class="flex items-center gap-1.5 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-accent-600">
+            <Megaphone :size="12" />
+            站点公告
+          </span>
+          <p class="max-h-40 w-full overflow-y-auto whitespace-pre-wrap break-words leading-6">{{ announcement }}</p>
+          <button
+            type="button"
+            class="text-[10.5px] font-medium text-accent-600 underline underline-offset-2 transition hover:text-accent-700"
+            @click="announcementHistoryOpen = true"
+          >
+            查看历史公告
+          </button>
+        </div>
+      </section>
+
       <section class="upload-card mt-6 overflow-hidden rounded-[26px] border border-white/90 bg-white/85 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.35)] backdrop-blur-xl">
         <div class="grid lg:grid-cols-[1.08fr_.92fr]">
           <div class="flex flex-col p-4 sm:p-6">
@@ -473,7 +569,7 @@ watch(
                 <Sparkles :size="11" class="text-accent-400" />
                 免密即传
               </p>
-              <span class="text-[9px] text-ink-300">单文件 · 最大 500 MB</span>
+              <span class="text-[9px] text-ink-300">单文件 · 最大 1 GB</span>
             </div>
 
             <div
@@ -628,7 +724,7 @@ watch(
                   </span>
                   <Check v-if="!isPublic" :size="13" class="text-amber-500" />
                 </span>
-                <span class="mt-2 block text-[11.5px] font-semibold text-ink-800">仅 qzx 可见</span>
+                <span class="mt-2 block text-[11.5px] font-semibold text-ink-800">最高管理员</span>
                 <span class="mt-0.5 block text-[9px] leading-4 text-ink-400">私密投递，访客不可见</span>
               </button>
             </div>
@@ -825,6 +921,12 @@ watch(
                     <span>{{ file.uploader_name }}</span>
                     <span class="h-0.5 w-0.5 rounded-full bg-slate-300" />
                     <span>{{ formatRelative(file.created_at) }}</span>
+                    <template v-if="file.visible_until">
+                      <span class="h-0.5 w-0.5 rounded-full bg-slate-300" />
+                      <span :class="new Date(file.visible_until) <= new Date() ? 'text-rose-500' : ''">
+                        {{ new Date(file.visible_until) <= new Date() ? "已过期" : `可见至 ${formatRelative(file.visible_until)}` }}
+                      </span>
+                    </template>
                   </div>
                 </div>
               </div>
@@ -849,13 +951,13 @@ watch(
                         : 'border-amber-200 bg-amber-50/70 text-amber-700 hover:bg-amber-100'
                     "
                     :disabled="togglingId === file.id"
-                    :title="file.is_public ? '点击切换为仅 qzx 可见' : '点击切换为所有人可见'"
+                    :title="file.is_public ? '点击切换为最高管理员可见' : '点击切换为所有人可见'"
                     @click="togglePublic(file)"
                   >
                     <Loader2 v-if="togglingId === file.id" :size="11" class="animate-spin" />
                     <Eye v-else-if="file.is_public" :size="11" />
                     <EyeOff v-else :size="11" />
-                    {{ file.is_public ? "所有人可见" : "仅 qzx 可见" }}
+                    {{ file.is_public ? "所有人可见" : "最高管理员" }}
                   </button>
                   <button
                     type="button"
@@ -891,21 +993,6 @@ watch(
         </div>
       </section>
 
-      <div class="mt-6 flex flex-col gap-3 rounded-2xl border border-white/80 bg-white/45 px-4 py-3.5 backdrop-blur sm:flex-row sm:items-center">
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-ink-500 shadow-sm">
-          <ShieldCheck :size="15" />
-        </span>
-        <p class="text-[9.5px] leading-5 text-ink-400">
-          文件只通过服务端鉴权的下载接口访问：访客仅能读取公开文件，私密投递的下载与元数据都需要最高管理员（qzx）身份。
-          物理文件不会通过公开的 <code class="rounded bg-white/80 px-1 py-0.5 text-[9px]">/media</code> 路径暴露。
-        </p>
-        <button
-          type="button"
-          class="ml-auto shrink-0 text-[9px] font-medium text-ink-400 underline underline-offset-2 transition hover:text-ink-700 sm:ml-3"
-          @click="openTerms(false)"
-        >《使用声明》</button>
-        <span class="hidden text-[9px] text-ink-300 sm:block">ZIXXX RELAY</span>
-      </div>
     </div>
 
     <FilePreviewModal
@@ -917,6 +1004,21 @@ watch(
       @close="previewTarget = null"
     />
 
+    <ModalShell
+      :open="announcementHistoryOpen"
+      title="公告"
+      subtitle="当前公告与历史记录"
+      max-width="max-w-xl"
+      @close="announcementHistoryOpen = false"
+    >
+      <AnnouncementBody />
+      <template #footer>
+        <button type="button" class="btn-secondary" @click="announcementHistoryOpen = false">
+          关闭
+        </button>
+      </template>
+    </ModalShell>
+
     <UsageTermsModal
       :open="termsOpen"
       :accept-mode="termsAcceptMode"
@@ -924,6 +1026,34 @@ watch(
       @close="termsOpen = false"
       @accept="onAcceptTerms"
     />
+
+    <ModalShell
+      :open="announcementEditorOpen"
+      :title="announcementKind === 'transfer' ? '管理中转站公告' : '管理登录页公告'"
+      subtitle="公告按纯文本展示。清空内容并保存即可撤下。"
+      max-width="max-w-xl"
+      @close="announcementEditorOpen = false"
+    >
+      <label class="field-label" for="announcement-content">公告内容</label>
+      <textarea
+        id="announcement-content"
+        v-model="announcementDraft"
+        rows="10"
+        maxlength="5000"
+        class="field-textarea mt-2"
+        placeholder="输入要向用户展示的公告；留空保存表示撤下。"
+      />
+      <p class="mt-2 text-right text-[11px] tabular-nums text-ink-400">
+        {{ announcementDraft.length }} / 5000
+      </p>
+      <template #footer>
+        <button type="button" class="btn-secondary" @click="announcementEditorOpen = false">取消</button>
+        <button type="button" class="btn-primary" :disabled="savingAnnouncement" @click="saveAnnouncement">
+          <Loader2 v-if="savingAnnouncement" :size="14" class="animate-spin" />
+          {{ announcementDraft.trim() ? "发布公告" : "撤下公告" }}
+        </button>
+      </template>
+    </ModalShell>
 
     <ModalShell
       :open="editOpen"
@@ -962,9 +1092,14 @@ watch(
             placeholder="补充这个文件的用途或说明"
           />
         </div>
+        <div>
+          <label class="field-label" for="edit-transfer-expiry">可见截止时间</label>
+          <input id="edit-transfer-expiry" v-model="editVisibleUntil" type="datetime-local" class="field-textarea mt-1.5 h-10 resize-none py-2.5" />
+          <p class="mt-1 text-[10px] text-ink-400">留空表示长期可见；到期后文件会从普通用户列表隐藏，下载和预览链接也会失效。</p>
+        </div>
         <div class="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-[9.5px] text-ink-400">
           <Eye :size="12" />
-          可见性当前为「{{ editing.is_public ? "所有人可见" : "仅 qzx 可见" }}」，可在列表中一键切换。
+          可见性当前为「{{ editing.is_public ? "所有人可见" : "最高管理员" }}」，可在列表中一键切换。
         </div>
       </div>
 

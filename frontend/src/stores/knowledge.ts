@@ -20,17 +20,36 @@ export const useKnowledgeStore = defineStore("knowledge", () => {
   const collections = ref<KnowledgeCollection[]>([]);
   const documents = ref<KnowledgeDocument[]>([]);
   const memories = ref<PersonalMemory[]>([]);
+  const documentCount = ref(0);
+  const documentPage = ref(1);
+  const documentPages = ref(1);
+  const memoryCount = ref(0);
+  const memoryPage = ref(1);
+  const memoryPages = ref(1);
   const searchResult = ref<KnowledgeSearchResult | null>(null);
   const loading = ref(false);
 
   let ownerId: number | null = null;
+  let sessionEpoch = 0;
+
+  interface OwnerRequest {
+    ownerId: number;
+    epoch: number;
+  }
 
   const activeCollections = computed(() => collections.value);
 
   function reset(): void {
+    sessionEpoch += 1;
     collections.value = [];
     documents.value = [];
     memories.value = [];
+    documentCount.value = 0;
+    documentPage.value = 1;
+    documentPages.value = 1;
+    memoryCount.value = 0;
+    memoryPage.value = 1;
+    memoryPages.value = 1;
     searchResult.value = null;
     loading.value = false;
   }
@@ -44,34 +63,62 @@ export const useKnowledgeStore = defineStore("knowledge", () => {
     return current !== null;
   }
 
+  function beginOwnerRequest(): OwnerRequest | null {
+    if (!ensureOwner() || ownerId === null) return null;
+    return { ownerId, epoch: sessionEpoch };
+  }
+
+  function isCurrentRequest(request: OwnerRequest): boolean {
+    return (
+      request.epoch === sessionEpoch &&
+      request.ownerId === ownerId &&
+      request.ownerId === (auth.user?.id ?? null)
+    );
+  }
+
   async function loadCollections(): Promise<void> {
-    if (!ensureOwner()) return;
+    const request = beginOwnerRequest();
+    if (!request) return;
     const list = await knowledgeApi.fetchCollections();
-    if (!ensureOwner()) return;
+    if (!isCurrentRequest(request)) return;
     collections.value = list;
   }
 
   async function loadDocuments(query: Parameters<typeof knowledgeApi.fetchDocuments>[0] = {}): Promise<void> {
-    if (!ensureOwner()) return;
+    const request = beginOwnerRequest();
+    if (!request) return;
     loading.value = true;
     try {
       const page = await knowledgeApi.fetchDocuments(query);
-      if (!ensureOwner()) return;
+      if (!isCurrentRequest(request)) return;
       documents.value = page.results;
+      documentCount.value = page.count;
+      documentPage.value = page.page;
+      documentPages.value = page.pages;
     } finally {
-      loading.value = false;
+      if (isCurrentRequest(request)) loading.value = false;
     }
   }
 
-  async function loadMemories(status?: PersonalMemory["status"]): Promise<void> {
-    if (!ensureOwner()) return;
+  async function loadMemories(
+    status?: PersonalMemory["status"],
+    page = 1,
+  ): Promise<void> {
+    const request = beginOwnerRequest();
+    if (!request) return;
     loading.value = true;
     try {
-      const page = await knowledgeApi.fetchMemories(status ? { status } : {});
-      if (!ensureOwner()) return;
-      memories.value = page.results;
+      const result = await knowledgeApi.fetchMemories({
+        ...(status ? { status } : {}),
+        page,
+      });
+      if (!isCurrentRequest(request)) return;
+      memories.value = result.results;
+      memoryCount.value = result.count;
+      memoryPage.value = result.page;
+      memoryPages.value = result.pages;
     } finally {
-      loading.value = false;
+      if (isCurrentRequest(request)) loading.value = false;
     }
   }
 
@@ -80,15 +127,16 @@ export const useKnowledgeStore = defineStore("knowledge", () => {
     scope?: "all" | "collections";
     collection_ids?: string[];
   }): Promise<KnowledgeSearchResult | null> {
-    if (!ensureOwner()) return null;
+    const request = beginOwnerRequest();
+    if (!request) return null;
     loading.value = true;
     try {
       const result = await knowledgeApi.searchKnowledge(payload);
-      if (!ensureOwner()) return null;
+      if (!isCurrentRequest(request)) return null;
       searchResult.value = result;
       return result;
     } finally {
-      loading.value = false;
+      if (isCurrentRequest(request)) loading.value = false;
     }
   }
 
@@ -96,6 +144,12 @@ export const useKnowledgeStore = defineStore("knowledge", () => {
     collections,
     documents,
     memories,
+    documentCount,
+    documentPage,
+    documentPages,
+    memoryCount,
+    memoryPage,
+    memoryPages,
     searchResult,
     loading,
     activeCollections,

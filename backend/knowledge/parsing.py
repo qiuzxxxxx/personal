@@ -85,6 +85,10 @@ def _markdown_segments(text: str) -> list[Segment]:
         buffer = []
 
     for line in text.splitlines():
+        line_start = offset
+        # Every line advances the offset, including headings and blank lines;
+        # otherwise the recorded character ranges drift behind the text.
+        offset += len(line) + 1
         stripped = line.strip()
         if stripped.startswith("#"):
             flush()
@@ -94,25 +98,24 @@ def _markdown_segments(text: str) -> list[Segment]:
                 stack.pop()
             stack.append(title)
             heading = title
-            start = offset + len(line) + 1
+            start = offset
             # The heading itself is searchable content, not only a path.
             segments.append(
                 Segment(
                     text=title,
                     heading_path=" > ".join(stack),
-                    char_start=offset,
-                    char_end=offset + len(title),
+                    char_start=line_start,
+                    char_end=line_start + len(line),
                 )
             )
             continue
         if not stripped:
             flush()
-            start = offset + len(line) + 1
+            start = offset
             continue
         if not buffer:
-            start = offset
+            start = line_start
         buffer.append(line)
-        offset += len(line) + 1
     flush()
     return segments
 

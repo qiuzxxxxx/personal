@@ -36,15 +36,26 @@ if IS_PRODUCTION:
         '请生成一个 50 字符以上的随机值并写入 .env，可用 python -c "import secrets;'
         'print(secrets.token_urlsafe(64))"。',
     )
+    if len(_secret_key_env) < 50:
+        raise RuntimeError("生产环境 DJANGO_SECRET_KEY 至少需要 50 个字符。")
 SECRET_KEY = _secret_key_env or get_random_secret_key()
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
+if IS_PRODUCTION and DEBUG:
+    raise RuntimeError("生产环境禁止 DJANGO_DEBUG=1；请关闭调试模式后启动。")
 
+_allowed_hosts_env = os.environ.get("DJANGO_ALLOWED_HOSTS", "").strip()
+if IS_PRODUCTION and not _allowed_hosts_env:
+    raise RuntimeError("生产环境必须显式设置 DJANGO_ALLOWED_HOSTS。")
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",")
+    for host in (_allowed_hosts_env or "localhost,127.0.0.1,[::1]").split(",")
     if host.strip()
 ]
+if IS_PRODUCTION and not ALLOWED_HOSTS:
+    raise RuntimeError("生产环境 DJANGO_ALLOWED_HOSTS 必须至少包含一个域名。")
+if IS_PRODUCTION and "*" in ALLOWED_HOSTS:
+    raise RuntimeError("生产环境 DJANGO_ALLOWED_HOSTS 不能使用通配符 *。")
 
 INSTALLED_APPS = [
     "daphne",
@@ -99,14 +110,21 @@ WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
 
 DATABASE_ENGINE = os.environ.get("DATABASE_ENGINE", "sqlite3").strip().lower()
+if IS_PRODUCTION and DATABASE_ENGINE not in {"postgres", "postgresql"}:
+    raise RuntimeError(
+        "生产环境必须使用 PostgreSQL：请设置 DATABASE_ENGINE=postgres，避免以 SQLite 上线。"
+    )
 
 if DATABASE_ENGINE in {"postgres", "postgresql"}:
+    _postgres_password = os.environ.get("POSTGRES_PASSWORD", "")
+    if IS_PRODUCTION and not _postgres_password:
+        raise RuntimeError("生产环境必须设置 POSTGRES_PASSWORD。")
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": os.environ.get("POSTGRES_DB", "zixxx"),
             "USER": os.environ.get("POSTGRES_USER", "zixxx"),
-            "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
+            "PASSWORD": _postgres_password,
             "HOST": os.environ.get("POSTGRES_HOST", "db"),
             "PORT": os.environ.get("POSTGRES_PORT", "5432"),
             # Section 12.7: a bounded connection lifetime keeps the pool
@@ -119,20 +137,22 @@ if DATABASE_ENGINE in {"postgres", "postgresql"}:
         }
     }
 else:
-    # NEXUS_DB_PATH lets smoke and acceptance runs use a scratch database
-    # instead of the developer's working db.sqlite3.  Scratch databases run
-    # with the in-memory rollback journal: this sandboxed Windows environment
-    # can leave a hot -journal file behind, which would roll back committed
-    # transactions of the next connection.
-    scratch_db = os.environ.get("NEXUS_DB_PATH")
-    scratch_options = {"timeout": 20}
-    if scratch_db:
-        scratch_options["init_command"] = "PRAGMA journal_mode=MEMORY"
+    # SQLite is the development database.  It runs in WAL mode: this
+    # environment blocks the removal of the rollback journal, which made a
+    # later connection roll back the commit of the previous request (a login
+    # token disappeared right after it was issued).  WAL keeps the writes of
+    # several processes and is crash safe.  Production uses PostgreSQL.
+    DATABASE_OPTIONS = {
+        "timeout": 20,
+        "init_command": "PRAGMA journal_mode=WAL",
+    }
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": scratch_db or BASE_DIR / "db.sqlite3",
-            "OPTIONS": scratch_options,
+            # NEXUS_DB_PATH lets smoke and acceptance runs use a scratch
+            # database instead of the developer's working db.sqlite3.
+            "NAME": os.environ.get("NEXUS_DB_PATH") or BASE_DIR / "db.sqlite3",
+            "OPTIONS": DATABASE_OPTIONS,
         }
     }
 
@@ -171,16 +191,30 @@ PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
 # Phone upload sessions (QR codes).
 UPLOAD_SESSION_TTL_SECONDS = int(os.environ.get("UPLOAD_SESSION_TTL_SECONDS", "600"))
 UPLOAD_SESSION_MAX_FILES = int(os.environ.get("UPLOAD_SESSION_MAX_FILES", "20"))
+ONE_GIB = 1024 * 1024 * 1024
 UPLOAD_SESSION_MAX_BYTES = int(
-    os.environ.get("UPLOAD_SESSION_MAX_BYTES", str(500 * 1024 * 1024))
+    os.environ.get("UPLOAD_SESSION_MAX_BYTES", str(ONE_GIB))
 )
 UPLOAD_SESSION_MAX_FILE_BYTES = int(
-    os.environ.get("UPLOAD_SESSION_MAX_FILE_BYTES", str(100 * 1024 * 1024))
+    os.environ.get("UPLOAD_SESSION_MAX_FILE_BYTES", str(ONE_GIB))
 )
 UPLOAD_SESSION_MAX_ACTIVE = int(os.environ.get("UPLOAD_SESSION_MAX_ACTIVE", "3"))
 UPLOAD_RECEIPT_LEASE_SECONDS = int(os.environ.get("UPLOAD_RECEIPT_LEASE_SECONDS", "1200"))
 
-NEXUS_BUILTIN_LLM_API_KEY = os.environ.get("NEXUS_BUILTIN_LLM_API_KEY", "")
+# Optional local, server-only source file. Keep it out of Git and the frontend
+# bundle; an environment variable can override it during deployment.
+_local_secrets_path = Path(__file__).resolve().parent / "local_secrets.py"
+if _local_secrets_path.exists():
+    from .local_secrets import NEXUS_BUILTIN_LLM_API_KEY as _local_llm_api_key
+else:
+    _local_llm_api_key = ""
+NEXUS_BUILTIN_LLM_API_KEY = os.environ.get("NEXUS_BUILTIN_LLM_API_KEY") or _local_llm_api_key
+if IS_PRODUCTION and not os.environ.get("NEXUS_MASTER_KEY", "").strip() and not (
+    BASE_DIR / ".master.key"
+).is_file():
+    raise RuntimeError(
+        "生产环境必须设置 NEXUS_MASTER_KEY 或部署持久化的 backend/.master.key。"
+    )
 NEXUS_TRUSTED_PROXY_HOPS = max(0, int(os.environ.get("NEXUS_TRUSTED_PROXY_HOPS", "0")))
 NEXUS_LLM_PRIVATE_ORIGINS = [
     origin.strip()
@@ -251,7 +285,11 @@ if REDIS_URL:
         "default": {
             "BACKEND": "channels_redis.core.RedisChannelLayer",
             "CONFIG": {
-                "hosts": [REDIS_URL],
+                # The channel layer may use its own database on the same
+                # Redis instance; it defaults to the cache location.
+                "hosts": [
+                    os.environ.get("REDIS_CHANNEL_URL", REDIS_URL).strip() or REDIS_URL
+                ],
                 # A channel layer message is small; the default capacity is
                 # enough for a single user on one server.
                 "capacity": int(os.environ.get("REDIS_CHANNEL_CAPACITY", "100")),
@@ -324,8 +362,12 @@ if IS_PRODUCTION:
     CSRF_COOKIE_SECURE = True
     SECURE_SSL_REDIRECT = os.environ.get("DJANGO_SECURE_SSL_REDIRECT", "1") == "1"
     SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_HSTS_SECONDS", "31536000"))
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
+    # Enabling subdomain/preload policy affects every hostname under the
+    # registered domain, so deployments must opt in after verifying them.
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = os.environ.get(
+        "DJANGO_HSTS_INCLUDE_SUBDOMAINS", "0"
+    ) == "1"
+    SECURE_HSTS_PRELOAD = os.environ.get("DJANGO_HSTS_PRELOAD", "0") == "1"
     # Nginx terminates TLS and forwards the real client address.
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"

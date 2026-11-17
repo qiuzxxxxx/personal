@@ -48,6 +48,7 @@ const draftCollection = ref("");
 const draftAiEnabled = ref(false);
 const saving = ref(false);
 const busyId = ref("");
+const page = ref(1);
 
 const statusLabels: Record<string, string> = {
   pending: "排队中",
@@ -75,7 +76,14 @@ async function refresh(): Promise<void> {
     collection: activeCollection.value || undefined,
     q: keyword.value.trim() || undefined,
     deleted: showTrash.value,
+    page: page.value,
+    page_size: 50,
   });
+}
+
+async function changePage(next: number): Promise<void> {
+  page.value = Math.min(Math.max(1, next), Math.max(1, knowledge.documentPages));
+  await refresh();
 }
 
 async function addCollection(): Promise<void> {
@@ -210,12 +218,17 @@ async function rebuild(document: KnowledgeDocument): Promise<void> {
 }
 
 async function importJournal(): Promise<void> {
+  const now = new Date();
+  const localDay = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+  let entry;
   try {
-    await workspace.loadJournal(new Date().toISOString().slice(0, 10));
-  } catch {
-    // A missing journal is not an error for the import action.
+    entry = await workspace.loadJournal(localDay);
+  } catch (error) {
+    toast.error(extractApiError(error));
+    return;
   }
-  const entry = workspace.journal;
   if (!entry?.id) {
     toast.error("今天的每日记录还没有内容。");
     return;
@@ -304,7 +317,7 @@ onMounted(async () => {
                   type="button"
                   class="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[12.5px] transition"
                   :class="activeCollection === '' ? 'bg-slate-100 text-ink-900' : 'text-ink-600 hover:bg-slate-50'"
-                  @click="activeCollection = ''; refresh()"
+                  @click="activeCollection = ''; page = 1; refresh()"
                 >
                   全部集合
                   <span class="text-[11px] text-ink-400">
@@ -318,7 +331,7 @@ onMounted(async () => {
                     type="button"
                     class="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12.5px] transition"
                     :class="activeCollection === collection.id ? 'bg-slate-100 text-ink-900' : 'text-ink-600 hover:bg-slate-50'"
-                    @click="activeCollection = collection.id; refresh()"
+                    @click="activeCollection = collection.id; page = 1; refresh()"
                   >
                     <Database :size="13" class="shrink-0 text-ink-400" />
                     <span class="truncate">{{ collection.name }}</span>
@@ -390,12 +403,12 @@ onMounted(async () => {
               type="button"
               class="rounded-full px-3 py-1.5 text-[12px] font-medium transition"
               :class="showTrash ? 'bg-rose-600 text-white' : 'bg-white text-ink-500 hover:bg-slate-100'"
-              @click="showTrash = !showTrash; refresh()"
+              @click="showTrash = !showTrash; page = 1; refresh()"
             >
               回收站
             </button>
             <span class="ml-auto text-[12px] text-ink-400">
-              {{ visibleDocuments.length }} 个条目
+              {{ knowledge.documentCount }} 个条目
             </span>
           </div>
 
@@ -525,6 +538,15 @@ onMounted(async () => {
               </div>
             </li>
           </ul>
+          <nav
+            v-if="knowledge.documentPages > 1"
+            class="mt-5 flex items-center justify-center gap-3"
+            aria-label="知识条目分页"
+          >
+            <button type="button" class="btn-secondary !h-9 !min-h-9 !px-3" :disabled="knowledge.documentPage <= 1" @click="changePage(knowledge.documentPage - 1)">上一页</button>
+            <span class="text-[12px] tabular-nums text-ink-500">第 {{ knowledge.documentPage }} / {{ knowledge.documentPages }} 页</span>
+            <button type="button" class="btn-secondary !h-9 !min-h-9 !px-3" :disabled="knowledge.documentPage >= knowledge.documentPages" @click="changePage(knowledge.documentPage + 1)">下一页</button>
+          </nav>
         </div>
       </div>
     </div>

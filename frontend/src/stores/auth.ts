@@ -25,9 +25,8 @@ export const useAuthStore = defineStore("auth", () => {
   const isQzx = computed(() => user.value?.username === "qzx");
   const isAdmin = computed(() => Boolean(user.value?.is_admin));
   const isSuper = computed(() => Boolean(user.value?.is_super));
-  const isChatUser = computed(() =>
-    ["qzx", "sqx"].includes(user.value?.username || ""),
-  );
+  const isGuest = computed(() => Boolean(user.value?.is_guest));
+  const isChatUser = computed(() => Boolean(user.value?.is_chat_user));
   const partnerName = computed(() =>
     user.value?.username === "qzx" ? "sqx" : "qzx",
   );
@@ -54,11 +53,14 @@ export const useAuthStore = defineStore("auth", () => {
       return;
     }
     initialization = (async () => {
+      const initializingToken = token.value;
       try {
-        user.value = await fetchMe();
+        const fetchedUser = await fetchMe();
+        if (token.value !== initializingToken) return;
+        user.value = fetchedUser;
         persist();
       } catch {
-        clear();
+        if (token.value === initializingToken) clear();
       } finally {
         initialized.value = true;
         initialization = null;
@@ -82,12 +84,12 @@ export const useAuthStore = defineStore("auth", () => {
   }
 
   async function logout(): Promise<void> {
+    const logoutToken = token.value;
+    clear();
     try {
-      if (token.value) await logoutRequest();
+      if (logoutToken) await logoutRequest(logoutToken);
     } catch {
       // A local logout must still succeed if the token already expired.
-    } finally {
-      clear();
     }
   }
 
@@ -100,6 +102,7 @@ export const useAuthStore = defineStore("auth", () => {
     isQzx,
     isAdmin,
     isSuper,
+    isGuest,
     isChatUser,
     partnerName,
     initialize,

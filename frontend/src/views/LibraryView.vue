@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import {
   Download,
+  BookPlus,
   FileText,
   Folder,
   FolderPlus,
   Image as ImageIcon,
+  Pencil,
   QrCode,
   RotateCcw,
   Search,
@@ -13,9 +15,10 @@ import {
   Upload,
   X,
 } from "lucide-vue-next";
-import api from "@/api/client";
-import { extractApiError } from "@/api/client";
+import api, { extractApiError, requestPath } from "@/api/client";
+import { importKnowledge } from "@/api/knowledge";
 import PhoneUploadDialog from "@/components/PhoneUploadDialog.vue";
+import ModalShell from "@/components/ModalShell.vue";
 import {
   createFolder,
   deleteFolder,
@@ -24,18 +27,24 @@ import {
   fetchFolders,
   fetchMaterials,
   restoreMaterial,
+  updateFolder,
+  updateMaterial,
   uploadMaterial,
 } from "@/api/workspace";
 import type { LibraryFolder, LibraryMaterial } from "@/api/workspace";
+import { useAuthStore } from "@/stores/auth";
 import { useToastStore } from "@/stores/toast";
 import { useWorkspaceStore } from "@/stores/workspace";
 
 const toast = useToastStore();
 const workspace = useWorkspaceStore();
+const auth = useAuthStore();
 
 const folders = ref<LibraryFolder[]>([]);
 const materials = ref<LibraryMaterial[]>([]);
 const count = ref(0);
+const page = ref(1);
+const pages = ref(1);
 const activeFolder = ref("");
 const keyword = ref("");
 const fileType = ref("");
@@ -56,6 +65,17 @@ const preview = ref<{ material: LibraryMaterial; url: string; kind: "image" | "p
 );
 const previewText = ref("");
 const showPhoneUpload = ref(false);
+const materialEditOpen = ref(false);
+const editingMaterial = ref<LibraryMaterial | null>(null);
+const materialEditName = ref("");
+const materialEditRemark = ref("");
+const materialEditFolder = ref("");
+const savingMaterial = ref(false);
+const folderEditOpen = ref(false);
+const editingFolder = ref<LibraryFolder | null>(null);
+const folderEditName = ref("");
+const savingFolder = ref(false);
+let refreshSequence = 0;
 
 const fileTypes = [
   { value: "", label: "全部类型" },
@@ -77,26 +97,100 @@ function formatSize(bytes: number): string {
 }
 
 async function refresh(): Promise<void> {
+  const sequence = ++refreshSequence;
+  const ownerId = auth.user?.id ?? null;
   loading.value = true;
   try {
-    const [folderList, page] = await Promise.all([
+    const [folderList, materialPage] = await Promise.all([
       fetchFolders(),
       fetchMaterials({
         folder: activeFolder.value || undefined,
         q: keyword.value.trim() || undefined,
         type: fileType.value || undefined,
         deleted: showTrash.value,
-        page_size: 100,
+        page: page.value,
+        page_size: 50,
       }),
     ]);
+    if (sequence !== refreshSequence || ownerId !== (auth.user?.id ?? null)) return;
     folders.value = folderList;
-    materials.value = page.results;
-    count.value = page.count;
+    materials.value = materialPage.results;
+    count.value = materialPage.count;
+    pages.value = materialPage.pages;
+  } catch (error) {
+    if (sequence === refreshSequence && ownerId === (auth.user?.id ?? null)) {
+      toast.error(extractApiError(error));
+    }
+  } finally {
+    if (sequence === refreshSequence) loading.value = false;
+  }
+}
+
+function openMaterialEdit(material: LibraryMaterial): void {
+  editingMaterial.value = material;
+  materialEditName.value = material.original_name;
+  materialEditRemark.value = material.remark;
+  materialEditFolder.value = material.folder || "";
+  materialEditOpen.value = true;
+}
+
+async function saveMaterialEdit(): Promise<void> {
+  if (!editingMaterial.value || savingMaterial.value) return;
+  if (!materialEditName.value.trim()) {
+    toast.error("文件名不能为空。");
+    return;
+  }
+  savingMaterial.value = true;
+  try {
+    await updateMaterial(editingMaterial.value.id, {
+      original_name: materialEditName.value.trim(),
+      remark: materialEditRemark.value.trim(),
+      folder: materialEditFolder.value || null,
+      version: editingMaterial.value.version,
+    });
+    materialEditOpen.value = false;
+    editingMaterial.value = null;
+    toast.success("资料信息已更新。");
+    await refresh();
   } catch (error) {
     toast.error(extractApiError(error));
   } finally {
-    loading.value = false;
+    savingMaterial.value = false;
   }
+}
+
+function openFolderEdit(folder: LibraryFolder): void {
+  editingFolder.value = folder;
+  folderEditName.value = folder.name;
+  folderEditOpen.value = true;
+}
+
+async function saveFolderEdit(): Promise<void> {
+  if (!editingFolder.value || savingFolder.value) return;
+  if (!folderEditName.value.trim()) {
+    toast.error("资料夹名称不能为空。");
+    return;
+  }
+  savingFolder.value = true;
+  try {
+    await updateFolder(editingFolder.value.id, {
+      name: folderEditName.value.trim(),
+      version: editingFolder.value.version,
+    });
+    folderEditOpen.value = false;
+    editingFolder.value = null;
+    toast.success("资料夹已重命名。");
+    await refresh();
+  } catch (error) {
+    toast.error(extractApiError(error));
+  } finally {
+    savingFolder.value = false;
+  }
+}
+
+async function changePage(next: number): Promise<void> {
+  page.value = Math.min(Math.max(1, next), Math.max(1, pages.value));
+  await refresh();
 }
 
 async function addFolder(): Promise<void> {
@@ -180,13 +274,22 @@ async function download(material: LibraryMaterial): Promise<void> {
   }
 }
 
+async function addMaterialToKnowledge(material: LibraryMaterial): Promise<void> {
+  try {
+    await importKnowledge({ material: material.id, ai_enabled: false });
+    toast.success(`「${material.original_name}」已加入知识库。`);
+  } catch (error) {
+    toast.error(extractApiError(error));
+  }
+}
+
 async function openPreview(material: LibraryMaterial): Promise<void> {
   if (!material.is_previewable) {
     await download(material);
     return;
   }
   try {
-    const response = await api.get<Blob>(`${material.download_url}?inline=1`, {
+    const response = await api.get<Blob>(requestPath(`${material.download_url}?inline=1`), {
       responseType: "blob",
     });
     const url = URL.createObjectURL(response.data);
@@ -227,6 +330,23 @@ onMounted(async () => {
   await workspace.loadTasks({});
   await refresh();
 });
+
+watch(
+  () => auth.user?.id,
+  (next, previous) => {
+    if (next === previous) return;
+    refreshSequence += 1;
+    closePreview();
+    folders.value = [];
+    materials.value = [];
+    count.value = 0;
+    page.value = 1;
+    activeFolder.value = "";
+    materialEditOpen.value = false;
+    folderEditOpen.value = false;
+    if (next) void refresh();
+  },
+);
 </script>
 
 <template>
@@ -314,7 +434,7 @@ onMounted(async () => {
                   type="button"
                   class="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-[12.5px] transition"
                   :class="activeFolder === '' ? 'bg-slate-100 text-ink-900' : 'text-ink-600 hover:bg-slate-50'"
-                  @click="activeFolder = ''; refresh()"
+                  @click="activeFolder = ''; page = 1; refresh()"
                 >
                   全部文件
                   <span class="text-[11px] text-ink-400">{{ count }}</span>
@@ -326,11 +446,20 @@ onMounted(async () => {
                     type="button"
                     class="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-[12.5px] transition"
                     :class="activeFolder === folder.id ? 'bg-slate-100 text-ink-900' : 'text-ink-600 hover:bg-slate-50'"
-                    @click="activeFolder = folder.id; refresh()"
+                    @click="activeFolder = folder.id; page = 1; refresh()"
                   >
                     <Folder :size="13" class="shrink-0 text-ink-400" />
                     <span class="truncate">{{ folder.name }}</span>
                     <span class="ml-auto text-[11px] text-ink-400">{{ folder.material_count }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-300 transition hover:bg-slate-50 hover:text-accent-600"
+                    title="重命名资料夹"
+                    :aria-label="`重命名资料夹 ${folder.name}`"
+                    @click="openFolderEdit(folder)"
+                  >
+                    <Pencil :size="13" />
                   </button>
                   <button
                     type="button"
@@ -382,13 +511,13 @@ onMounted(async () => {
                 type="search"
                 placeholder="按文件名或备注搜索"
                 class="w-44 bg-transparent text-[12.5px] outline-none placeholder:text-ink-300"
-                @keyup.enter="refresh"
+                @keyup.enter="page = 1; refresh()"
               />
             </div>
             <select
               v-model="fileType"
               class="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-ink-600 outline-none"
-              @change="refresh"
+              @change="page = 1; refresh()"
             >
               <option v-for="option in fileTypes" :key="option.value" :value="option.value">
                 {{ option.label }}
@@ -398,7 +527,7 @@ onMounted(async () => {
               type="button"
               class="rounded-full px-3 py-1.5 text-[12px] font-medium transition"
               :class="showTrash ? 'bg-rose-600 text-white' : 'bg-white text-ink-500 hover:bg-slate-100'"
-              @click="showTrash = !showTrash; refresh()"
+              @click="showTrash = !showTrash; page = 1; refresh()"
             >
               回收站
             </button>
@@ -444,6 +573,26 @@ onMounted(async () => {
                     预览
                   </button>
                   <button
+                    v-if="!showTrash"
+                    type="button"
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-ink-300 transition hover:bg-accent-50 hover:text-accent-600"
+                    title="加入知识库"
+                    :aria-label="`将 ${material.original_name} 加入知识库`"
+                    @click="addMaterialToKnowledge(material)"
+                  >
+                    <BookPlus :size="15" />
+                  </button>
+                  <button
+                    v-if="!showTrash"
+                    type="button"
+                    class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-ink-300 transition hover:bg-slate-50 hover:text-ink-700"
+                    title="编辑资料信息"
+                    :aria-label="`编辑 ${material.original_name}`"
+                    @click="openMaterialEdit(material)"
+                  >
+                    <Pencil :size="15" />
+                  </button>
+                  <button
                     type="button"
                     class="shrink-0 text-ink-300 transition hover:text-ink-700"
                     title="下载"
@@ -473,6 +622,15 @@ onMounted(async () => {
               </ul>
             </section>
           </div>
+          <nav
+            v-if="pages > 1"
+            class="mt-5 flex items-center justify-center gap-3"
+            aria-label="资料分页"
+          >
+            <button type="button" class="btn-secondary !h-9 !min-h-9 !px-3" :disabled="page <= 1" @click="changePage(page - 1)">上一页</button>
+            <span class="text-[12px] tabular-nums text-ink-500">第 {{ page }} / {{ pages }} 页</span>
+            <button type="button" class="btn-secondary !h-9 !min-h-9 !px-3" :disabled="page >= pages" @click="changePage(page + 1)">下一页</button>
+          </nav>
         </div>
       </div>
     </div>
@@ -484,6 +642,49 @@ onMounted(async () => {
       @close="showPhoneUpload = false"
       @received="refresh"
     />
+
+    <ModalShell
+      :open="materialEditOpen"
+      title="编辑资料信息"
+      subtitle="可修改展示名称、备注和所在资料夹；文件内容不会变化。"
+      @close="materialEditOpen = false"
+    >
+      <div class="space-y-4">
+        <div>
+          <label class="field-label" for="library-material-name">文件名</label>
+          <input id="library-material-name" v-model="materialEditName" maxlength="255" class="field-textarea mt-1.5 h-11 resize-none py-2.5" />
+        </div>
+        <div>
+          <label class="field-label" for="library-material-folder">所在资料夹</label>
+          <select id="library-material-folder" v-model="materialEditFolder" class="field-textarea mt-1.5 h-11 resize-none py-2.5">
+            <option value="">未分类</option>
+            <option v-for="folder in folders" :key="folder.id" :value="folder.id">{{ folder.name }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="field-label" for="library-material-remark">备注</label>
+          <textarea id="library-material-remark" v-model="materialEditRemark" rows="4" maxlength="500" class="field-textarea mt-1.5" />
+        </div>
+      </div>
+      <template #footer>
+        <button type="button" class="btn-secondary" @click="materialEditOpen = false">取消</button>
+        <button type="button" class="btn-primary" :disabled="savingMaterial" @click="saveMaterialEdit">保存修改</button>
+      </template>
+    </ModalShell>
+
+    <ModalShell
+      :open="folderEditOpen"
+      title="重命名资料夹"
+      max-width="max-w-md"
+      @close="folderEditOpen = false"
+    >
+      <label class="field-label" for="library-folder-name">资料夹名称</label>
+      <input id="library-folder-name" v-model="folderEditName" maxlength="120" class="field-textarea mt-1.5 h-11 resize-none py-2.5" @keyup.enter="saveFolderEdit" />
+      <template #footer>
+        <button type="button" class="btn-secondary" @click="folderEditOpen = false">取消</button>
+        <button type="button" class="btn-primary" :disabled="savingFolder" @click="saveFolderEdit">保存</button>
+      </template>
+    </ModalShell>
 
     <div
       v-if="preview"

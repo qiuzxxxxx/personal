@@ -30,7 +30,10 @@ const failedCount = computed(() => items.value.filter((item) => item.status === 
 const limitLabel = computed(() => {
   if (!session.value) return "";
   const max = session.value.quota.max_file_bytes;
-  return `单个文件上限 ${Math.round(max / 1024 / 1024)} MB，每个会话最多 ${session.value.quota.max_files} 个文件`;
+  const maxLabel = max >= 1024 * 1024 * 1024
+    ? `${(max / 1024 / 1024 / 1024).toFixed(max % (1024 * 1024 * 1024) ? 1 : 0)} GB`
+    : `${Math.round(max / 1024 / 1024)} MB`;
+  return `单个文件上限 ${maxLabel}，每个会话最多 ${session.value.quota.max_files} 个文件`;
 });
 
 function readCredentials(): { token: string; sessionId: string } | null {

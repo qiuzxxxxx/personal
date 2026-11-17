@@ -14,7 +14,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from knowledge.ingestion import create_document
 from knowledge.jobs import process_pending
-from knowledge.memories import create_memory
+from knowledge.memories import MemoryError, create_memory
 from knowledge.models import (
     KnowledgeChunk,
     KnowledgeCollection,
@@ -26,7 +26,6 @@ from knowledge.models import (
 from knowledge.search import search
 
 FIXTURES = Path(__file__).resolve().parent.parent.parent / "fixtures"
-COLLECTION_NAMES = ["运维手册", "架构决策", "个人偏好"]
 
 
 class Command(BaseCommand):
@@ -50,13 +49,16 @@ class Command(BaseCommand):
         if user is None:
             raise CommandError(f"账号 {options['owner']} 不存在。")
 
-        collections, documents = self._seed(user, documents_fixture)
+        collections: dict[str, KnowledgeCollection] = {}
+        documents: dict[str, KnowledgeDocument] = {}
+        memories: list = []
         try:
+            self._seed(user, documents_fixture, collections, documents, memories)
             process_pending(limit=200)
             results = self._run(user, questions_fixture, collections, documents)
         finally:
             if not options.get("keep"):
-                self._cleanup(user, documents)
+                self._cleanup(collections, documents, memories)
 
         payload = self._summarize(results)
         if options.get("json"):
@@ -75,15 +77,18 @@ class Command(BaseCommand):
             )
 
     # -- helpers ---------------------------------------------------------- #
-    def _seed(self, user, fixture) -> tuple[dict, dict]:
-        collections: dict[str, KnowledgeCollection] = {}
+    def _seed(self, user, fixture, collections, documents, memories) -> None:
+        """Create the evaluation data and record every created object.
+
+        The containers are filled while creating, so a failure half way
+        through still leaves the cleanup with the exact objects to remove.
+        """
         for item in fixture["collections"]:
             collections[item["key"]] = KnowledgeCollection.objects.create(
                 owner=user,
                 name=item["name"],
                 description=item["description"],
             )
-        documents: dict[str, KnowledgeDocument] = {}
         for item in fixture["documents"]:
             documents[item["key"]] = create_document(
                 owner=user,
@@ -94,29 +99,40 @@ class Command(BaseCommand):
                 ai_enabled=item.get("ai_enabled", True),
             )
         for item in fixture.get("memories", []):
-            create_memory(
-                user,
-                key=item["key"],
-                content=item["content"],
-                kind=item["kind"],
-                scope_type=item["scope_type"],
-                status=item["status"],
-                evidence_type=item["evidence_type"],
-                source_ref="evaluation dataset",
-            )
-        return collections, documents
+            try:
+                memories.append(
+                    create_memory(
+                        user,
+                        key=item["key"],
+                        content=item["content"],
+                        kind=item["kind"],
+                        scope_type=item["scope_type"],
+                        status=item["status"],
+                        evidence_type=item["evidence_type"],
+                        source_ref="evaluation dataset",
+                    )
+                )
+            except MemoryError:
+                # The owner already has a memory with this key; the evaluation
+                # must neither overwrite it nor delete it afterwards.
+                self.stderr.write(f"跳过已存在的记忆：{item['key']}")
 
-    def _cleanup(self, user, documents) -> None:
-        PersonalMemory.objects.filter(owner=user, source_ref="evaluation dataset").delete()
+    def _cleanup(self, collections, documents, memories) -> None:
+        """Remove exactly the objects this command created.
+
+        Deleting by name would also remove the owner's real collections and
+        memories that happen to share a generic name such as "运维手册".
+        """
+        for memory in memories:
+            PersonalMemory.objects.filter(pk=memory.pk).delete()
         # 删除集合只会把文档的集合置空，文档本身必须单独删除。
         for document in documents.values():
             KnowledgeChunk.objects.filter(document=document).delete()
             KnowledgeIndexJob.objects.filter(document=document).delete()
             KnowledgeRevision.objects.filter(document=document).delete()
             document.delete()
-        KnowledgeCollection.objects.filter(
-            owner=user, name__in=COLLECTION_NAMES
-        ).delete()
+        for collection in collections.values():
+            KnowledgeCollection.objects.filter(pk=collection.pk).delete()
 
     def _run(self, user, fixture, collections, documents) -> list[dict]:
         results: list[dict] = []

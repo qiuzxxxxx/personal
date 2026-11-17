@@ -5,16 +5,20 @@ import {
   Brain,
   Check,
   CircleSlash,
+  Eraser,
+  Loader2,
   Plus,
   Save,
   Sparkles,
   Trash2,
   X,
 } from "lucide-vue-next";
+import ModalShell from "@/components/ModalShell.vue";
 import { extractApiError } from "@/api/client";
 import {
   acceptMemory,
   createMemory,
+  deleteMemory,
   disableMemory,
   forgetMemory,
   updateMemory,
@@ -39,6 +43,8 @@ const draftProject = ref("");
 const editing = ref<PersonalMemory | null>(null);
 const editContent = ref("");
 const busyId = ref("");
+const pendingDelete = ref<PersonalMemory | null>(null);
+const page = ref(1);
 
 const statusLabels: Record<string, string> = {
   suggested: "候选",
@@ -65,7 +71,12 @@ const kindLabels: Record<string, string> = {
 const visibleMemories = computed(() => knowledge.memories);
 
 async function refresh(): Promise<void> {
-  await knowledge.loadMemories(statusFilter.value || undefined);
+  await knowledge.loadMemories(statusFilter.value || undefined, page.value);
+}
+
+async function changePage(next: number): Promise<void> {
+  page.value = Math.min(Math.max(1, next), Math.max(1, knowledge.memoryPages));
+  await refresh();
 }
 
 async function submitCreate(): Promise<void> {
@@ -138,6 +149,32 @@ async function runAction(
   }
 }
 
+function askDelete(memory: PersonalMemory): void {
+  pendingDelete.value = memory;
+}
+
+function closeDelete(): void {
+  if (pendingDelete.value && busyId.value === pendingDelete.value.id) return;
+  pendingDelete.value = null;
+}
+
+async function confirmDelete(): Promise<void> {
+  const target = pendingDelete.value;
+  if (!target || busyId.value) return;
+  busyId.value = target.id;
+  try {
+    await deleteMemory(target.id, target.version);
+    knowledge.memories = knowledge.memories.filter((memory) => memory.id !== target.id);
+    if (editing.value?.id === target.id) editing.value = null;
+    pendingDelete.value = null;
+    toast.success("记忆及其记录已彻底删除。");
+  } catch (error) {
+    toast.error(extractApiError(error));
+  } finally {
+    busyId.value = "";
+  }
+}
+
 onMounted(async () => {
   await workspace.loadProjects();
   await refresh();
@@ -151,7 +188,7 @@ onMounted(async () => {
         <div>
           <h1 class="text-[26px] font-semibold tracking-tight text-ink-900">个人记忆</h1>
           <p class="mt-1 text-[12.5px] text-ink-400">
-            只有你确认过的条目会作为背景提供给 AI，随时可以修改、停用或忘记。
+            只有你确认过的条目会作为背景提供给 AI，随时可以修改、停用、忘记或彻底删除。
           </p>
         </div>
         <div class="flex items-center gap-2">
@@ -179,7 +216,7 @@ onMounted(async () => {
           type="button"
           class="rounded-full px-3 py-1.5 text-[12px] font-medium transition"
           :class="statusFilter === '' ? 'bg-ink-900 text-white' : 'bg-white text-ink-500 hover:bg-slate-100'"
-          @click="statusFilter = ''; refresh()"
+          @click="statusFilter = ''; page = 1; refresh()"
         >
           全部
         </button>
@@ -189,12 +226,12 @@ onMounted(async () => {
           type="button"
           class="rounded-full px-3 py-1.5 text-[12px] font-medium transition"
           :class="statusFilter === status ? 'bg-ink-900 text-white' : 'bg-white text-ink-500 hover:bg-slate-100'"
-          @click="statusFilter = status; refresh()"
+          @click="statusFilter = status; page = 1; refresh()"
         >
           {{ statusLabels[status] }}
         </button>
         <span class="ml-auto text-[12px] text-ink-400">
-          {{ visibleMemories.length }} 条记忆
+          {{ knowledge.memoryCount }} 条记忆
         </span>
       </div>
 
@@ -238,7 +275,7 @@ onMounted(async () => {
                 来源：{{ memory.source_ref }}
               </p>
             </div>
-            <div class="flex shrink-0 items-center gap-1.5">
+            <div class="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
               <button
                 v-if="memory.status === 'suggested'"
                 type="button"
@@ -270,17 +307,39 @@ onMounted(async () => {
               <button
                 v-if="memory.status !== 'forgotten'"
                 type="button"
-                class="text-ink-300 transition hover:text-rose-500"
+                class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-medium text-ink-400 transition hover:bg-slate-100 hover:text-ink-700 disabled:opacity-50"
                 title="忘记这条记忆"
+                :aria-label="`忘记记忆 ${memory.key}`"
                 :disabled="busyId === memory.id"
                 @click="runAction(memory, 'forget')"
               >
-                <Trash2 :size="15" />
+                <Eraser :size="13" />
+                忘记
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-medium text-rose-500 transition hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+                title="彻底删除这条记忆及其记录"
+                :aria-label="`彻底删除记忆 ${memory.key}`"
+                :disabled="Boolean(busyId)"
+                @click="askDelete(memory)"
+              >
+                <Trash2 :size="13" />
+                彻底删除
               </button>
             </div>
           </div>
         </li>
       </ul>
+      <nav
+        v-if="knowledge.memoryPages > 1"
+        class="mt-5 flex items-center justify-center gap-3"
+        aria-label="记忆分页"
+      >
+        <button type="button" class="btn-secondary !h-9 !min-h-9 !px-3" :disabled="knowledge.memoryPage <= 1" @click="changePage(knowledge.memoryPage - 1)">上一页</button>
+        <span class="text-[12px] tabular-nums text-ink-500">第 {{ knowledge.memoryPage }} / {{ knowledge.memoryPages }} 页</span>
+        <button type="button" class="btn-secondary !h-9 !min-h-9 !px-3" :disabled="knowledge.memoryPage >= knowledge.memoryPages" @click="changePage(knowledge.memoryPage + 1)">下一页</button>
+      </nav>
     </div>
 
     <div
@@ -399,5 +458,40 @@ onMounted(async () => {
         </div>
       </div>
     </div>
+
+    <ModalShell
+      :open="Boolean(pendingDelete)"
+      title="彻底删除这条记忆？"
+      subtitle="此操作无法撤销，也不会保留在已忘记或修改记录中。"
+      max-width="max-w-md"
+      :hide-close="Boolean(pendingDelete && busyId === pendingDelete.id)"
+      @close="closeDelete"
+    >
+      <div v-if="pendingDelete" class="rounded-2xl border border-rose-100 bg-rose-50/70 p-4">
+        <p class="break-all text-[12px] font-semibold text-ink-800">{{ pendingDelete.key }}</p>
+        <p class="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-[11.5px] leading-5 text-ink-500">
+          {{ pendingDelete.content || "（内容已清空）" }}
+        </p>
+      </div>
+      <p class="mt-3 text-[11.5px] leading-5 text-ink-500">
+        删除后，这条记忆及其全部修改记录会从服务器物理移除，并立即停止向 AI 提供相关背景。
+      </p>
+
+      <template #footer>
+        <button type="button" class="btn-secondary" :disabled="Boolean(busyId)" @click="closeDelete">
+          取消
+        </button>
+        <button
+          type="button"
+          class="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 text-[12px] font-semibold text-white shadow-sm transition hover:bg-rose-700 disabled:opacity-60"
+          :disabled="Boolean(busyId)"
+          @click="confirmDelete"
+        >
+          <Loader2 v-if="busyId" :size="13" class="animate-spin" />
+          <Trash2 v-else :size="13" />
+          永久删除
+        </button>
+      </template>
+    </ModalShell>
   </div>
 </template>

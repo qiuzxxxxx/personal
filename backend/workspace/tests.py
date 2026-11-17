@@ -109,6 +109,55 @@ class WorkspaceTestCase(APITestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_patch_keeps_fields_that_are_not_sent(self):
+        """A partial update must not clear the fields it does not mention."""
+        project = Project.objects.create(owner=self.owner, name="归档项目")
+        tag = Tag.objects.create(owner=self.owner, name="重要")
+        created = self.create_task(
+            description="写会议纪要",
+            scheduled_date="2026-11-15",
+            due_at="2026-11-16T09:00:00+08:00",
+            project=str(project.id),
+            tags=[str(tag.id)],
+        ).json()
+        patched = self.client.patch(
+            f"/api/tasks/{created['id']}/",
+            {"title": "只改标题", "version": created["version"]},
+            format="json",
+        )
+        self.assertEqual(patched.status_code, 200)
+        body = patched.json()
+        self.assertEqual(body["title"], "只改标题")
+        self.assertEqual(body["description"], "写会议纪要")
+        self.assertEqual(body["scheduled_date"], "2026-11-15")
+        self.assertEqual(body["project"], str(project.id))
+        self.assertEqual([item["id"] for item in body["tags"]], [str(tag.id)])
+
+    def test_patch_can_clear_tags(self):
+        tag = Tag.objects.create(owner=self.owner, name="可清空")
+        created = self.create_task(tags=[str(tag.id)]).json()
+        patched = self.client.patch(
+            f"/api/tasks/{created['id']}/",
+            {"tags": [], "version": created["version"]},
+            format="json",
+        )
+        self.assertEqual(patched.status_code, 200)
+        self.assertEqual(patched.json()["tags"], [])
+        self.assertEqual(Task.objects.get(pk=created["id"]).tags.count(), 0)
+
+    def test_patch_project_keeps_description_and_color(self):
+        project = Project.objects.create(
+            owner=self.owner, name="原始项目", description="项目说明", color="blue"
+        )
+        patched = self.client.patch(
+            f"/api/projects/{project.id}/",
+            {"name": "新名字", "version": project.version},
+            format="json",
+        )
+        self.assertEqual(patched.status_code, 200)
+        self.assertEqual(patched.json()["description"], "项目说明")
+        self.assertEqual(patched.json()["color"], "blue")
+
     def test_soft_delete_and_restore(self):
         created = self.create_task().json()
         deleted = self.client.delete(f"/api/tasks/{created['id']}/")

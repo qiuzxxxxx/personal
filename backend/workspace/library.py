@@ -8,7 +8,7 @@ from pathlib import Path
 
 from django.conf import settings
 
-MAX_MATERIAL_BYTES = 100 * 1024 * 1024
+MAX_MATERIAL_BYTES = 1024 * 1024 * 1024
 MAX_NAME_LENGTH = 255
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
@@ -70,6 +70,17 @@ EXTENSION_MIME = {
     ".svg": "image/svg+xml",
     ".html": "text/html",
     ".htm": "text/html",
+}
+
+# Container formats that share the same signature.  A file whose sniffed type
+# and whose extension both belong to this family is accepted, which covers
+# legacy Office documents and the OOXML (.docx/.xlsx/.pptx) zip containers.
+OFFICE_FAMILY = {
+    "application/zip",
+    "application/vnd.ms-office",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 
 
@@ -170,7 +181,7 @@ def validate_upload(upload) -> tuple[str, str]:
         raise MaterialError("不能上传空文件。")
     if upload.size > MAX_MATERIAL_BYTES:
         raise MaterialError(
-            "文件超过 100 MB 限制。", code="file_too_large"
+            "文件超过 1 GB 限制。", code="file_too_large"
         )
     head = upload.read(4096)
     try:
@@ -183,11 +194,10 @@ def validate_upload(upload) -> tuple[str, str]:
     expected = EXTENSION_MIME.get(suffix)
     if expected and detected != expected:
         # Office formats share container signatures; allow those families.
-        office_family = {
-            "application/zip",
-            "application/vnd.ms-office",
-        }
-        if not (detected in office_family and expected in office_family):
+        # OOXML files (.docx/.xlsx/.pptx) are zip containers, so the sniffed
+        # type is "application/zip" while the extension maps to the specific
+        # openxmlformats mime.
+        if not (detected in OFFICE_FAMILY and expected in OFFICE_FAMILY):
             raise MaterialError("文件内容与扩展名不一致，已拒绝保存。")
     return suffix, detected
 

@@ -28,6 +28,8 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const today = ref<TodayPayload | null>(null);
   const tasks = ref<WorkspaceTask[]>([]);
   const taskCount = ref(0);
+  const taskPage = ref(1);
+  const taskPages = ref(1);
   const projects = ref<WorkspaceProject[]>([]);
   const tags = ref<WorkspaceTag[]>([]);
   const journal = ref<WorkspaceJournal | null>(null);
@@ -35,11 +37,20 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const saving = ref(false);
 
   let ownerId: number | null = null;
+  let sessionEpoch = 0;
+
+  interface OwnerRequest {
+    ownerId: number;
+    epoch: number;
+  }
 
   function reset(): void {
+    sessionEpoch += 1;
     today.value = null;
     tasks.value = [];
     taskCount.value = 0;
+    taskPage.value = 1;
+    taskPages.value = 1;
     projects.value = [];
     tags.value = [];
     journal.value = null;
@@ -57,50 +68,70 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     return current !== null;
   }
 
+  function beginOwnerRequest(): OwnerRequest | null {
+    if (!ensureOwner() || ownerId === null) return null;
+    return { ownerId, epoch: sessionEpoch };
+  }
+
+  function isCurrentRequest(request: OwnerRequest): boolean {
+    return (
+      request.epoch === sessionEpoch &&
+      request.ownerId === ownerId &&
+      request.ownerId === (auth.user?.id ?? null)
+    );
+  }
+
   async function loadToday(date?: string): Promise<TodayPayload | null> {
-    if (!ensureOwner()) return null;
+    const request = beginOwnerRequest();
+    if (!request) return null;
     loading.value = true;
     try {
       const payload = await workspaceApi.fetchToday(date);
-      if (!ensureOwner()) return null;
+      if (!isCurrentRequest(request)) return null;
       today.value = payload;
       return payload;
     } finally {
-      loading.value = false;
+      if (isCurrentRequest(request)) loading.value = false;
     }
   }
 
   async function loadTasks(query: TaskListQuery = {}): Promise<void> {
-    if (!ensureOwner()) return;
+    const request = beginOwnerRequest();
+    if (!request) return;
     loading.value = true;
     try {
       const page = await workspaceApi.fetchTasks(query);
-      if (!ensureOwner()) return;
+      if (!isCurrentRequest(request)) return;
       tasks.value = page.results;
       taskCount.value = page.count;
+      taskPage.value = page.page;
+      taskPages.value = page.pages;
     } finally {
-      loading.value = false;
+      if (isCurrentRequest(request)) loading.value = false;
     }
   }
 
   async function loadProjects(): Promise<void> {
-    if (!ensureOwner()) return;
+    const request = beginOwnerRequest();
+    if (!request) return;
     const list = await workspaceApi.fetchProjects();
-    if (!ensureOwner()) return;
+    if (!isCurrentRequest(request)) return;
     projects.value = list;
   }
 
   async function loadTags(): Promise<void> {
-    if (!ensureOwner()) return;
+    const request = beginOwnerRequest();
+    if (!request) return;
     const list = await workspaceApi.fetchTags();
-    if (!ensureOwner()) return;
+    if (!isCurrentRequest(request)) return;
     tags.value = list;
   }
 
   async function loadJournal(date: string): Promise<WorkspaceJournal | null> {
-    if (!ensureOwner()) return null;
+    const request = beginOwnerRequest();
+    if (!request) return null;
     const entry = await workspaceApi.fetchJournal(date);
-    if (!ensureOwner()) return null;
+    if (!isCurrentRequest(request)) return null;
     journal.value = entry;
     return entry;
   }
@@ -110,22 +141,24 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     content: string,
     version?: number,
   ): Promise<WorkspaceJournal | null> {
-    if (!ensureOwner()) return null;
+    const request = beginOwnerRequest();
+    if (!request) return null;
     saving.value = true;
     try {
       const entry = await workspaceApi.saveJournal(date, { content, version });
-      if (!ensureOwner()) return null;
+      if (!isCurrentRequest(request)) return null;
       journal.value = entry;
       return entry;
     } finally {
-      saving.value = false;
+      if (isCurrentRequest(request)) saving.value = false;
     }
   }
 
   async function addTask(payload: TaskWritePayload): Promise<WorkspaceTask | null> {
-    if (!ensureOwner()) return null;
+    const request = beginOwnerRequest();
+    if (!request) return null;
     const task = await workspaceApi.createTask(payload);
-    if (!ensureOwner()) return null;
+    if (!isCurrentRequest(request)) return null;
     tasks.value = [task, ...tasks.value];
     taskCount.value += 1;
     return task;
@@ -135,9 +168,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     id: string,
     payload: TaskWritePayload,
   ): Promise<WorkspaceTask | null> {
-    if (!ensureOwner()) return null;
+    const request = beginOwnerRequest();
+    if (!request) return null;
     const task = await workspaceApi.updateTask(id, payload);
-    if (!ensureOwner()) return null;
+    if (!isCurrentRequest(request)) return null;
     tasks.value = tasks.value.map((item) => (item.id === task.id ? task : item));
     if (today.value) {
       today.value = {
@@ -150,9 +184,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   }
 
   async function removeTask(id: string): Promise<void> {
-    if (!ensureOwner()) return;
+    const request = beginOwnerRequest();
+    if (!request) return;
     const task = await workspaceApi.deleteTask(id);
-    if (!ensureOwner()) return;
+    if (!isCurrentRequest(request)) return;
     tasks.value = tasks.value.filter((item) => item.id !== id);
     taskCount.value = Math.max(0, taskCount.value - 1);
     if (today.value) {
@@ -166,16 +201,19 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   }
 
   async function restoreTask(id: string): Promise<void> {
-    if (!ensureOwner()) return;
+    const request = beginOwnerRequest();
+    if (!request) return;
     await workspaceApi.restoreTask(id);
+    if (!isCurrentRequest(request)) return;
   }
 
   async function reorderTasks(
     items: { id: string; version: number }[],
   ): Promise<void> {
-    if (!ensureOwner()) return;
+    const request = beginOwnerRequest();
+    if (!request) return;
     const updated = await workspaceApi.reorderTasks(items);
-    if (!ensureOwner()) return;
+    if (!isCurrentRequest(request)) return;
     const byId = new Map(updated.map((task) => [task.id, task]));
     tasks.value = tasks.value.map((task) => byId.get(task.id) ?? task);
   }
@@ -184,6 +222,8 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     today,
     tasks,
     taskCount,
+    taskPage,
+    taskPages,
     projects,
     tags,
     journal,

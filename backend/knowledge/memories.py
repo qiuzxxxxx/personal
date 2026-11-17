@@ -4,6 +4,7 @@ A memory is only ever active after the user confirmed it. Candidates
 (``suggested``) stay separate and are never injected into a model request.
 Forget removes the body, keeps a body-free audit record and raises the owner
 context epoch so that older injected messages stop being used.
+Permanent deletion removes both the memory and its revision history.
 """
 from __future__ import annotations
 
@@ -195,6 +196,18 @@ def forget_memory(memory: PersonalMemory, *, expected_version: int, actor: str =
     record_revision(memory, "forget", actor)
     bump_epoch(memory.owner, withdraw=True)
     return memory
+
+
+@transaction.atomic
+def delete_memory(memory: PersonalMemory, *, expected_version: int) -> None:
+    """Permanently remove a memory and its cascading revision history."""
+    if memory.version != expected_version:
+        raise MemoryError("记忆已被其他设备修改，请刷新后重试。", code="version_conflict")
+    owner = memory.owner
+    memory.delete()
+    # Invalidate both cached and previously injected context. No revision is
+    # written here: permanent deletion must leave no memory history record.
+    bump_epoch(owner, withdraw=True)
 
 
 def export_memories(owner) -> list[dict]:

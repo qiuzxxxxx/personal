@@ -1,9 +1,13 @@
 """Tests for the personal knowledge base and the personal memory."""
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
@@ -17,10 +21,11 @@ from knowledge.models import (
     KnowledgeDocument,
     KnowledgeIndexJob,
     MessageCitation,
+    MemoryRevision,
     PersonalMemory,
 )
 from knowledge.search import tokenize
-from workspace.models import DailyEntry, Folder, Material, Task
+from workspace.models import DailyEntry, Folder, Material, Project, Task
 
 TXT_BYTES = "工作台笔记\n今天需要复核资料库的索引状态。".encode("utf-8")
 
@@ -105,6 +110,57 @@ class KnowledgeTestCase(APITestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()["code"], "version_conflict")
 
+    def test_document_patch_keeps_the_collection(self):
+        """A title-only PATCH must not move the document out of its collection."""
+        collection = KnowledgeCollection.objects.create(owner=self.owner, name="资料集")
+        created = self.create_note(collection=str(collection.id))
+        document_id = created.json()["id"]
+        response = self.client.patch(
+            f"/api/knowledge/documents/{document_id}/",
+            {"title": "只改标题", "version": created.json()["version"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["collection"], str(collection.id))
+        self.assertEqual(
+            KnowledgeDocument.objects.get(pk=document_id).collection_id, collection.id
+        )
+
+    def test_document_patch_can_move_to_another_collection(self):
+        first = KnowledgeCollection.objects.create(owner=self.owner, name="集合一")
+        second = KnowledgeCollection.objects.create(owner=self.owner, name="集合二")
+        created = self.create_note(collection=str(first.id))
+        response = self.client.patch(
+            f"/api/knowledge/documents/{created.json()['id']}/",
+            {"collection": str(second.id), "version": created.json()["version"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["collection"], str(second.id))
+
+    def test_memory_patch_keeps_the_project_scope(self):
+        project = Project.objects.create(owner=self.owner, name="工作台项目")
+        created = self.client.post(
+            "/api/knowledge/memories/",
+            {
+                "key": "项目偏好",
+                "content": "回答使用简体中文",
+                "scope_type": "project",
+                "project": str(project.id),
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.content)
+        self.assertEqual(created.json()["project"], str(project.id))
+        response = self.client.patch(
+            f"/api/knowledge/memories/{created.json()['id']}/",
+            {"content": "回答使用简体中文并附来源", "version": created.json()["version"]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["project"], str(project.id))
+        self.assertEqual(response.json()["scope_type"], "project")
+
     def test_delete_moves_to_trash_and_restore_works(self):
         created = self.create_note()
         document_id = created.json()["id"]
@@ -125,6 +181,63 @@ class KnowledgeTestCase(APITestCase):
         purged = self.client.post(f"/api/knowledge/documents/{document_id}/purge/")
         self.assertEqual(purged.status_code, 200)
         self.assertFalse(KnowledgeDocument.objects.filter(pk=document_id).exists())
+
+    # -- trash retention -------------------------------------------------- #
+    def test_cleanup_keeps_documents_that_are_still_in_the_trash(self):
+        """The trash keeps its chunks until the retention period is over."""
+        created = self.create_note()
+        document_id = created.json()["id"]
+        process_pending(limit=10)
+        self.client.delete(f"/api/knowledge/documents/{document_id}/")
+        call_command("cleanup_knowledge_data")
+        self.assertTrue(
+            KnowledgeChunk.objects.filter(document_id=document_id).exists()
+        )
+
+    def test_cleanup_drops_chunks_after_the_retention_period(self):
+        created = self.create_note()
+        document_id = created.json()["id"]
+        process_pending(limit=10)
+        self.client.delete(f"/api/knowledge/documents/{document_id}/")
+        old = timezone.now() - timedelta(days=45)
+        KnowledgeDocument.objects.filter(pk=document_id).update(deleted_at=old)
+        call_command("cleanup_knowledge_data")
+        self.assertFalse(
+            KnowledgeChunk.objects.filter(document_id=document_id).exists()
+        )
+
+    def test_restore_rebuilds_the_index(self):
+        created = self.create_note()
+        document_id = created.json()["id"]
+        process_pending(limit=10)
+        self.client.delete(f"/api/knowledge/documents/{document_id}/")
+        restored = self.client.post(f"/api/knowledge/documents/{document_id}/restore/")
+        self.assertEqual(restored.status_code, 200)
+        process_pending(limit=10)
+        hits = self.client.post(
+            "/api/knowledge/search/", {"query": "中文正文"}, format="json"
+        )
+        self.assertTrue(hits.json()["matches"])
+
+    # -- evaluation command ----------------------------------------------- #
+    def test_evaluation_command_keeps_real_collections(self):
+        """The evaluation must only delete the objects it created itself."""
+        real = KnowledgeCollection.objects.create(owner=self.owner, name="运维手册")
+        call_command("evaluate_knowledge_retrieval", owner=self.owner, json=True)
+        self.assertTrue(KnowledgeCollection.objects.filter(pk=real.pk).exists())
+        self.assertEqual(KnowledgeCollection.objects.filter(owner=self.owner).count(), 1)
+
+    def test_evaluation_command_keeps_existing_memories(self):
+        memory = self.client.post(
+            "/api/knowledge/memories/",
+            {"key": "真实记忆", "content": "这是用户自己的记忆。"},
+            format="json",
+        )
+        self.assertEqual(memory.status_code, 201)
+        call_command("evaluate_knowledge_retrieval", owner=self.owner, json=True)
+        self.assertTrue(
+            PersonalMemory.objects.filter(pk=memory.json()["id"]).exists()
+        )
 
     # -- import ----------------------------------------------------------- #
     def test_import_material_requires_own_material(self):
@@ -298,6 +411,38 @@ class KnowledgeTestCase(APITestCase):
         self.assertEqual(forgotten.json()["content"], "")
         self.assertGreater(current_floor_epoch(self.owner), before)
         self.assertFalse(PersonalMemory.objects.get(pk=memory_id).content)
+
+    def test_permanent_delete_removes_memory_and_revision_history(self):
+        created = self.client.post(
+            "/api/knowledge/memories/",
+            {"key": "remove_completely", "content": "永久删除的内容"},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201)
+        memory_id = created.json()["id"]
+        self.assertTrue(MemoryRevision.objects.filter(memory_id=memory_id).exists())
+        before = current_floor_epoch(self.owner)
+
+        conflict = self.client.delete(
+            f"/api/knowledge/memories/{memory_id}/",
+            {"version": 999},
+            format="json",
+        )
+        self.assertEqual(conflict.status_code, 409)
+        self.assertTrue(PersonalMemory.objects.filter(pk=memory_id).exists())
+
+        deleted = self.client.delete(
+            f"/api/knowledge/memories/{memory_id}/",
+            {"version": created.json()["version"]},
+            format="json",
+        )
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(PersonalMemory.objects.filter(pk=memory_id).exists())
+        self.assertFalse(MemoryRevision.objects.filter(memory_id=memory_id).exists())
+        self.assertGreater(current_floor_epoch(self.owner), before)
+
+        listed = self.client.get("/api/knowledge/memories/")
+        self.assertNotIn(memory_id, {item["id"] for item in listed.json()["results"]})
 
     def test_duplicate_active_key_is_rejected(self):
         payload = {"key": "dup", "content": "第一次"}

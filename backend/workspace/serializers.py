@@ -195,11 +195,23 @@ class TaskWriteSerializer(serializers.Serializer):
 
 
 class TaskPatchSerializer(TaskWriteSerializer):
-    """Partial update payload. ``version`` is required for conflict detection."""
+    """Partial update payload. ``version`` is required for conflict detection.
+
+    Every optional field is redeclared without a default: a field that keeps
+    the create-time default would always appear in ``validated_data`` and the
+    view would treat it as "provided", silently clearing description, dates,
+    project and tags on every PATCH.
+    """
 
     title = serializers.CharField(max_length=200, allow_blank=False, trim_whitespace=True, required=False)
     status = serializers.ChoiceField(choices=STATUS_CHOICES, required=False)
     priority = serializers.ChoiceField(choices=PRIORITY_CHOICES, required=False)
+    description = serializers.CharField(max_length=20000, required=False, allow_blank=True)
+    scheduled_date = serializers.DateField(required=False, allow_null=True)
+    due_at = serializers.DateTimeField(required=False, allow_null=True)
+    project = serializers.UUIDField(required=False, allow_null=True)
+    tags = serializers.ListField(child=serializers.UUIDField(), required=False)
+    client_request_id = serializers.CharField(max_length=64, required=False, allow_blank=True)
     version = serializers.IntegerField(required=False, min_value=1)
 
 
@@ -215,10 +227,17 @@ class ProjectWriteSerializer(serializers.Serializer):
 
 
 class ProjectPatchSerializer(ProjectWriteSerializer):
+    """Partial update payload; optional fields must not carry defaults.
+
+    See ``TaskPatchSerializer`` for why the defaults have to be dropped.
+    """
+
     name = serializers.CharField(
         max_length=120, allow_blank=False, trim_whitespace=True, required=False
     )
+    description = serializers.CharField(max_length=10000, required=False, allow_blank=True)
     status = serializers.ChoiceField(choices=PROJECT_STATUS_CHOICES, required=False)
+    color = serializers.CharField(max_length=32, required=False, allow_blank=True)
     version = serializers.IntegerField(required=False, min_value=1)
 
 

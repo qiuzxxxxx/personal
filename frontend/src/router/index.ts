@@ -72,7 +72,7 @@ const router = createRouter({
       path: "/chat",
       name: "chat",
       component: () => import("@/views/DirectChatView.vue"),
-      meta: { title: "双人密聊", requiresAuth: true },
+      meta: { title: "聊天", requiresAuth: true },
     },
     {
       path: "/transfer",
@@ -94,10 +94,9 @@ const router = createRouter({
   scrollBehavior: () => ({ top: 0 }),
 });
 
-// 游客 yk 只使用免密中转站，不能进入工作台或知识库。
+// 访客角色只使用免密中转站，不能进入工作台或知识库。
 const guestBlockedPaths = [
   "/agent",
-  "/chat",
   "/today",
   "/tasks",
   "/projects",
@@ -105,6 +104,7 @@ const guestBlockedPaths = [
   "/library",
   "/knowledge",
   "/knowledge/memories",
+  "/chat",
 ];
 
 router.beforeEach(async (to) => {
@@ -119,13 +119,13 @@ router.beforeEach(async (to) => {
       query: { redirect: to.fullPath },
     };
   }
-  // 已登录用户访问根路径时进入工作台，游客账号仍进入中转站。
+  // 已登录用户访问根路径时进入工作台，访客账号仍进入中转站。
   if (to.path === "/" && auth.isAuthenticated) {
-    return { path: auth.user?.username === "yk" ? "/transfer" : "/today" };
+    return { path: auth.isGuest ? "/transfer" : "/today" };
   }
   if (
     auth.isAuthenticated &&
-    auth.user?.username === "yk" &&
+    auth.isGuest &&
     guestBlockedPaths.some((path) => to.path === path || to.path.startsWith(`${path}/`))
   ) {
     return { path: "/transfer" };

@@ -4,7 +4,8 @@ import { CircleAlert, Download, Loader2 } from "lucide-vue-next";
 import ModalShell from "@/components/ModalShell.vue";
 import MarkdownRenderer from "@/components/MarkdownRenderer.vue";
 import FileIcon from "@/components/FileIcon.vue";
-import { fetchBlob, triggerBlobDownload } from "@/api/client";
+import { extractApiError, fetchBlob, triggerBlobDownload } from "@/api/client";
+import { useToastStore } from "@/stores/toast";
 import { formatBytes } from "@/lib/format";
 import { PREVIEW_LABEL, previewKind, type PreviewKind } from "@/lib/preview";
 
@@ -18,11 +19,13 @@ const props = defineProps<{
 
 const emit = defineEmits<{ close: [] }>();
 
+const toast = useToastStore();
 const kind = ref<PreviewKind>("none");
 const objectUrl = ref("");
 const textContent = ref("");
 const loading = ref(false);
 const failed = ref(false);
+const errorText = ref("");
 const mediaFailed = ref(false);
 let alive = true;
 
@@ -45,6 +48,7 @@ function onMediaError(): void {
 async function load(): Promise<void> {
   release();
   failed.value = false;
+  errorText.value = "";
   mediaFailed.value = false;
   const resolved = previewKind(props.name, props.mime || "", props.size || 0);
   kind.value = resolved;
@@ -70,8 +74,11 @@ async function load(): Promise<void> {
         : blob;
       objectUrl.value = URL.createObjectURL(mediaBlob);
     }
-  } catch {
-    if (alive && props.url === url) failed.value = true;
+  } catch (error) {
+    if (alive && props.url === url) {
+      failed.value = true;
+      errorText.value = extractApiError(error);
+    }
   } finally {
     if (alive && props.url === url) loading.value = false;
   }
@@ -86,8 +93,8 @@ async function download(): Promise<void> {
   try {
     const blob = await fetchBlob(props.url);
     triggerBlobDownload(blob, props.name);
-  } catch {
-    // The modal already surfaces load failures; stay silent here.
+  } catch (error) {
+    toast.error(extractApiError(error));
   }
 }
 
@@ -116,8 +123,8 @@ onBeforeUnmount(() => {
           <CircleAlert :size="19" />
         </span>
         <p class="text-[12px] font-medium text-ink-700">预览加载失败</p>
-        <p class="max-w-[280px] text-[10.5px] leading-5 text-ink-400">
-          文件可能已被删除，或当前账号没有下载权限。你可以尝试直接下载。
+        <p class="max-w-[320px] text-[10.5px] leading-5 text-ink-400">
+          {{ errorText || "文件可能已被删除，或当前账号没有下载权限。你可以尝试直接下载。" }}
         </p>
       </div>
 

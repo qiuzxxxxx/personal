@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 backend/venv/
+backend/.venv-run/
 .venv/
 env/
 *.log
@@ -9,6 +10,8 @@ env/
 # Django
 backend/db.sqlite3
 backend/db.sqlite3-journal
+backend/db.sqlite3-shm
+backend/db.sqlite3-wal
 backend/media/agent_uploads/
 backend/media/chat_files/
 backend/media/library/
@@ -21,7 +24,7 @@ backend/var/
 # may fall back to the repository root). The application packages are
 # re-included explicitly because their names are eight characters long too.
 backend/*-test-*/
-/backend/[0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z]
+/backend/[0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_][0-9a-z_]
 !/backend/accounts/
 !/backend/agent/
 !/backend/chat/
@@ -33,6 +36,7 @@ backend/*-test-*/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/.esbuild-tmp/
 frontend/.vite/
 *.tsbuildinfo
 
@@ -43,6 +47,7 @@ frontend/.vite/
 .tmp-crop.py
 probe.txt
 .screens/
+.screenshots/
 .tools/
 frontend/.tmp/
 .DS_Store
@@ -55,7 +60,4 @@ Thumbs.db
 .env
 .env.local
 backend/.master.key
-
-# Deployment runtime data
-backups/
-deploy/certbot-webroot/
+backend/config/local_secrets.py

@@ -12,9 +12,9 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, Max, Q
 from django.utils import timezone as django_timezone
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.permissions import CanUseWorkspace
 from config.http import BadRequest, error, no_store, paginate, parse_date
 
 from .models import (
@@ -185,7 +185,7 @@ def apply_status_fields(task: Task, status: str) -> dict:
 # today / preferences
 # --------------------------------------------------------------------------- #
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def today(request):
     user = request.user
     tz = user_timezone(user)
@@ -258,7 +258,7 @@ def today(request):
 
 
 @api_view(["GET", "PATCH"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def preferences(request):
     if request.method == "GET":
         return no_store(Response(serialize_preference(request.user)))
@@ -293,7 +293,7 @@ def preferences(request):
 # tasks
 # --------------------------------------------------------------------------- #
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def task_list(request):
     if request.method == "GET":
         queryset = task_queryset(request).order_by("position", "created_at")
@@ -363,7 +363,7 @@ def task_list(request):
 
 
 @api_view(["GET", "PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def task_detail(request, task_id):
     task = Task.objects.filter(pk=task_id, owner=request.user).first()
     if task is None:
@@ -392,8 +392,12 @@ def task_detail(request, task_id):
         return error("更新任务必须提交 version。", 400, code="version_required")
 
     try:
-        project = resolve_project(request.user, data.get("project"))
-        tags = resolve_tags(request.user, data.get("tags"))
+        project = (
+            resolve_project(request.user, data.get("project"))
+            if "project" in data
+            else None
+        )
+        tags = resolve_tags(request.user, data.get("tags")) if "tags" in data else None
     except BadRequest as exc:
         return error(str(exc), 400, code="invalid_reference")
 
@@ -430,14 +434,14 @@ def task_detail(request, task_id):
                 current_version=current.version,
                 current=TaskSerializer(current).data,
             )
-        if tags:
+        if "tags" in data:
             task.tags.set(tags)
     task.refresh_from_db()
     return no_store(Response(TaskSerializer(task).data))
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def task_restore(request, task_id):
     task = Task.objects.filter(pk=task_id, owner=request.user).first()
     if task is None:
@@ -452,7 +456,7 @@ def task_restore(request, task_id):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def task_reorder(request):
     payload = request.data if isinstance(request.data, dict) else {}
     items = payload.get("items")
@@ -513,7 +517,7 @@ def task_reorder(request):
 # projects
 # --------------------------------------------------------------------------- #
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def project_list(request):
     if request.method == "GET":
         queryset = visible_queryset(request, Project).annotate(
@@ -539,7 +543,7 @@ def project_list(request):
 
 
 @api_view(["GET", "PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def project_detail(request, project_id):
     project = Project.objects.filter(pk=project_id, owner=request.user).first()
     if project is None:
@@ -592,7 +596,7 @@ def project_detail(request, project_id):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def project_restore(request, project_id):
     project = Project.objects.filter(pk=project_id, owner=request.user).first()
     if project is None:
@@ -610,7 +614,7 @@ def project_restore(request, project_id):
 # tags
 # --------------------------------------------------------------------------- #
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def tag_list(request):
     if request.method == "GET":
         queryset = visible_queryset(request, Tag)
@@ -636,7 +640,7 @@ def tag_list(request):
 
 
 @api_view(["GET", "PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def tag_detail(request, tag_id):
     tag = Tag.objects.filter(pk=tag_id, owner=request.user).first()
     if tag is None:
@@ -693,7 +697,7 @@ def tag_detail(request, tag_id):
 # journal
 # --------------------------------------------------------------------------- #
 @api_view(["GET", "PUT"])
-@permission_classes([IsAuthenticated])
+@permission_classes([CanUseWorkspace])
 def journal(request, day):
     try:
         target = date_cls.fromisoformat(str(day))
@@ -736,7 +740,9 @@ def journal(request, day):
         payload["exists"] = True
         return Response(payload, status=201)
 
-    if version is not None and version != entry.version:
+    if version is None:
+        return error("更新每日记录必须提交 version。", 400, code="version_required")
+    if version != entry.version:
         return error(
             "每日记录已被其他设备修改，请刷新后重试。",
             409,

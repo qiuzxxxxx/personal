@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch, type Component } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch, type Component } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   Settings2,
@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   HardDriveUpload,
   LogIn,
+  BookPlus,
 } from "lucide-vue-next";
 import BrandMark from "@/components/BrandMark.vue";
 import MarkdownRenderer from "@/components/MarkdownRenderer.vue";
@@ -30,6 +31,7 @@ import { useConfigStore } from "@/stores/config";
 import { useToastStore } from "@/stores/toast";
 import { useKnowledgeStore } from "@/stores/knowledge";
 import { uploadAgentAttachment, streamAgentChat } from "@/api/agent";
+import { importKnowledge } from "@/api/knowledge";
 import { extractApiError } from "@/api/client";
 import { copyText } from "@/lib/markdown";
 import { formatTime } from "@/lib/format";
@@ -69,6 +71,7 @@ const uploadingLabel = ref("");
 const copiedId = ref("");
 const streamController = ref<AbortController | null>(null);
 const disposed = ref(false);
+const importingMessageId = ref("");
 
 // 知识范围开关：知识库、个人记忆、当前工作台。默认全部关闭，状态保存在会话上。
 const knowledgeScope = computed({
@@ -78,6 +81,19 @@ const knowledgeScope = computed({
   },
 });
 const lastSources = ref<KnowledgeSourceRef[]>([]);
+
+async function addMessageToKnowledge(message: AgentMessage): Promise<void> {
+  if (message.streaming || !message.id || importingMessageId.value) return;
+  importingMessageId.value = message.id;
+  try {
+    await importKnowledge({ message: message.id, ai_enabled: false });
+    toast.success("这条回答已加入知识库。");
+  } catch (error) {
+    toast.error(extractApiError(error));
+  } finally {
+    importingMessageId.value = "";
+  }
+}
 const lastWarnings = ref<string[]>([]);
 let cancelRequested = false;
 let scrollFrame = 0;
@@ -120,7 +136,7 @@ const needsKey = computed(
     !["custom", "deepseek"].includes(configStore.config.provider) &&
     !configStore.hasKey,
 );
-const canUseAgent = computed(() => auth.isAuthenticated);
+const canUseAgent = computed(() => auth.isAuthenticated && !auth.isGuest);
 const hasMessages = computed(() => agent.messages.length > 0);
 const showEmpty = computed(() => !hasMessages.value && !agent.loadingMessages);
 const streamingMessage = computed(() =>
@@ -211,6 +227,13 @@ onMounted(async () => {
 
 onActivated(() => {
   if (agent.messages.length) scrollToBottom(false);
+});
+
+onDeactivated(() => {
+  // KeepAlive only deactivates the view, it does not unmount it.  A running
+  // stream has to be stopped here, otherwise it keeps writing into a hidden
+  // view and the composer stays locked.
+  cancelStreamSilently();
 });
 
 onBeforeUnmount(() => {
@@ -475,7 +498,7 @@ function formatMessageTime(value: string): string {
           AI 对话需要登录
         </h1>
         <p class="mt-3 text-[12.5px] leading-6 text-ink-500">
-          使用 qzx / sqx 登录后即可开始多模态对话。公开文件中转站仍然无需账号。
+          请使用非访客账号登录后开始多模态对话。公开文件中转站仍然无需账号。
         </p>
         <div class="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
           <button type="button" class="btn-primary" @click="goLogin">
@@ -552,7 +575,7 @@ function formatMessageTime(value: string): string {
           <div class="animate-fade-up">
             <div class="mb-5 flex items-center gap-2">
               <span class="inline-flex items-center gap-1.5 rounded-full border border-white bg-white/75 py-1.5 pl-2 pr-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500 shadow-sm backdrop-blur">
-                <span class="flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-cyan-400 text-white">
+                <span class="flex h-4 w-4 items-center justify-center rounded-full bg-accent-500 text-white">
                   <Sparkles :size="9" />
                 </span>
                 Multimodal Agent
@@ -673,6 +696,16 @@ function formatMessageTime(value: string): string {
                       <Check v-if="copiedId === message.id" :size="12" />
                       <Copy v-else :size="12" />
                       {{ copiedId === message.id ? "已复制" : "复制" }}
+                    </button>
+                    <button
+                      type="button"
+                      class="message-action"
+                      :disabled="Boolean(importingMessageId)"
+                      @click="addMessageToKnowledge(message)"
+                    >
+                      <Loader2 v-if="importingMessageId === message.id" :size="12" class="animate-spin" />
+                      <BookPlus v-else :size="12" />
+                      加入知识库
                     </button>
                     <span class="text-[9px] text-ink-300">{{ formatMessageTime(message.created_at) }}</span>
                   </div>

@@ -19,7 +19,9 @@ from PIL import Image, UnidentifiedImageError
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 MAX_EXTRACTED_CHARS = 80_000
 MAX_DOCX_EXPANDED_BYTES = 100 * 1024 * 1024
-MAX_IMAGE_PIXELS = 32_000_000
+MAX_DOCX_ENTRIES = 5000
+MAX_PDF_PAGES = 200
+MAX_IMAGE_PIXELS = 16_000_000
 
 DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".txt", ".md", ".markdown"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -73,6 +75,8 @@ def _extract_pdf(raw: bytes) -> str:
             raise AttachmentError("该 PDF 已加密，暂不支持解析。")
         pages: list[str] = []
         for index, page in enumerate(document):
+            if index >= MAX_PDF_PAGES:
+                break
             text = page.get_text("text").strip()
             if text:
                 pages.append(f"--- 第 {index + 1} 页 ---\n{text}")
@@ -83,11 +87,36 @@ def _extract_pdf(raw: bytes) -> str:
         document.close()
 
 
+def _measure_expanded_size(archive: ZipFile) -> int:
+    """Count the bytes a zip really expands to.
+
+    The central directory of a zip can lie about the uncompressed size, so
+    the declared value is only a hint.  The members are read and counted with
+    a hard limit, which keeps the memory of a zip bomb bounded.
+    """
+    total = 0
+    entries = 0
+    for item in archive.infolist():
+        entries += 1
+        if entries > MAX_DOCX_ENTRIES:
+            raise AttachmentError("文档条目过多，已停止解析。")
+        if item.file_size > MAX_DOCX_EXPANDED_BYTES:
+            raise AttachmentError("DOCX 解压后过大，请缩小文档后重试。")
+        with archive.open(item) as handle:
+            while True:
+                chunk = handle.read(65536)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_DOCX_EXPANDED_BYTES:
+                    raise AttachmentError("DOCX 解压后过大，请缩小文档后重试。")
+    return total
+
+
 def _extract_docx(raw: bytes) -> str:
     try:
         with ZipFile(io.BytesIO(raw)) as archive:
-            if sum(item.file_size for item in archive.infolist()) > MAX_DOCX_EXPANDED_BYTES:
-                raise AttachmentError("DOCX 解压后过大，请缩小文档后重试。")
+            _measure_expanded_size(archive)
         document = Document(io.BytesIO(raw))
     except AttachmentError:
         raise

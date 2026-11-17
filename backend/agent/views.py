@@ -29,6 +29,7 @@ from .llm import check_model_connection, provider_family, stream_completion
 from .models import AgentAttachment, Conversation, Message, UserApiConfig
 from .parsing import MAX_ATTACHMENT_BYTES, AttachmentError, parse_attachment
 from .permissions import CanUseAgent
+from .retention import purge_expired_agent_history
 from .serializers import (
     AgentAttachmentSerializer,
     ChatRequestSerializer,
@@ -190,6 +191,7 @@ def _save_citations(message, context) -> None:
 @api_view(["GET", "POST"])
 @permission_classes([CanUseAgent])
 def conversations(request):
+    purge_expired_agent_history(request.user)
     if request.method == "GET":
         queryset = conversations_for(request).prefetch_related("messages")
         return Response(ConversationSummarySerializer(queryset, many=True).data)
@@ -208,6 +210,7 @@ def conversations(request):
 @api_view(["GET", "DELETE"])
 @permission_classes([CanUseAgent])
 def conversation_detail(request, conversation_id):
+    purge_expired_agent_history(request.user)
     conversation = conversation_for(request, conversation_id)
     if conversation is None:
         return Response({"detail": "对话不存在。"}, status=status.HTTP_404_NOT_FOUND)
@@ -220,6 +223,7 @@ def conversation_detail(request, conversation_id):
 @api_view(["GET"])
 @permission_classes([CanUseAgent])
 def conversation_messages(request, conversation_id):
+    purge_expired_agent_history(request.user)
     conversation = conversation_for(request, conversation_id)
     if conversation is None:
         return Response({"detail": "对话不存在。"}, status=status.HTTP_404_NOT_FOUND)
@@ -231,6 +235,7 @@ def conversation_messages(request, conversation_id):
 @parser_classes([MultiPartParser, FormParser])
 @permission_classes([CanUseAgent])
 def upload_attachment(request):
+    purge_expired_agent_history(request.user)
     upload = request.FILES.get("file")
     if upload is None:
         return Response({"detail": "请选择要上传的文件。"}, status=400)
@@ -437,6 +442,7 @@ def test_connection(request):
 @parser_classes([JSONParser])
 @permission_classes([CanUseAgent])
 def chat(request):
+    purge_expired_agent_history(request.user)
     serializer = ChatRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     payload = serializer.validated_data

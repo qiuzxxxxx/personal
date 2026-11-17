@@ -146,15 +146,15 @@ onUnmounted(() => {
 
 <template>
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/60 p-4">
-    <div class="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+    <div class="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="phone-upload-title">
       <div class="flex items-start justify-between gap-3">
         <div>
-          <h2 class="text-[15px] font-semibold text-ink-900">手机扫码上传</h2>
+          <h2 id="phone-upload-title" class="text-[15px] font-semibold text-ink-900">手机扫码上传</h2>
           <p class="mt-1 text-[12px] text-ink-400">
             目标：{{ targetLabel || "私人资料库" }} · 剩余 {{ remainingLabel }}
           </p>
         </div>
-        <button type="button" class="text-ink-400 hover:text-ink-700" @click="stopReceiving">
+        <button type="button" class="icon-button h-11 w-11 shrink-0" aria-label="关闭并停止接收" @click="stopReceiving">
           <X :size="17" />
         </button>
       </div>

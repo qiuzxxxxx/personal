@@ -1,66 +1,49 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   ArrowLeft,
   ArrowRight,
   Eye,
   EyeOff,
-  HardDriveUpload,
   Loader2,
   LockKeyhole,
-  MessagesSquare,
   ShieldCheck,
   Sparkles,
   UserRound,
   LogOut,
-  Check,
+  Wrench,
 } from "lucide-vue-next";
 import BrandMark from "@/components/BrandMark.vue";
+import brandLogo from "@/assets/brand/zixxx-logo.png";
 import UsageTermsModal from "@/components/UsageTermsModal.vue";
+import AnnouncementBody from "@/components/AnnouncementBody.vue";
+import ModalShell from "@/components/ModalShell.vue";
 import SiteFooter from "@/components/SiteFooter.vue";
+import { useAnnouncementStore } from "@/stores/announcements";
 import { useAuthStore } from "@/stores/auth";
 import { useToastStore } from "@/stores/toast";
+import { fetchMaintenanceStatus } from "@/api/auth";
 import { extractApiError } from "@/api/client";
 import { initials } from "@/lib/format";
-import type { User } from "@/types";
+import type { MaintenanceStatus, User } from "@/types";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const toast = useToastStore();
+const announcements = useAnnouncementStore();
 
 const username = ref("");
 const password = ref("");
+const particleCanvas = ref<HTMLCanvasElement | null>(null);
 const showPassword = ref(false);
 const submitting = ref(false);
 const error = ref("");
-const filledAccount = ref("");
 const termsOpen = ref(false);
-
-const quickAccounts = [
-  {
-    username: "qzx",
-    role: "最高管理员",
-    hint: "密聊 + AI 对话 + 中转站完全控制",
-    icon: ShieldCheck,
-    accent: "text-amber-600 bg-amber-50 border-amber-100",
-  },
-  {
-    username: "sqx",
-    role: "管理员",
-    hint: "密聊 + AI 对话 + 普通账号管理",
-    icon: MessagesSquare,
-    accent: "text-cyan-600 bg-cyan-50 border-cyan-100",
-  },
-  {
-    username: "yk",
-    role: "游客",
-    hint: "仅文件中转站",
-    icon: Eye,
-    accent: "text-slate-600 bg-slate-100 border-slate-200",
-  },
-];
+const announcementOpen = ref(false);
+const maintenance = ref<MaintenanceStatus | null>(null);
+let disposeParticleField: (() => void) | null = null;
 
 const redirectTarget = computed(() => {
   const value = route.query.redirect;
@@ -69,29 +52,14 @@ const redirectTarget = computed(() => {
   return value;
 });
 
-function accountCardClass(account: string): string {
-  return filledAccount.value === account
-    ? "border-accent-300 bg-accent-50/40 shadow-sm"
-    : "border-slate-200/80 bg-white/70 hover:border-slate-300 hover:bg-white";
-}
-
-function fillAccount(name: string): void {
-  username.value = name;
-  password.value = "";
-  filledAccount.value = name;
-  error.value = "";
-  const input = document.getElementById("login-password") as HTMLInputElement | null;
-  input?.focus();
-}
-
 function homeFor(user: User): string {
   if (redirectTarget.value) {
-    if (user.username === "yk" && redirectTarget.value !== "/transfer" && redirectTarget.value !== "/accounts") {
+    if (user.is_guest && redirectTarget.value !== "/transfer" && redirectTarget.value !== "/accounts") {
       return "/transfer";
     }
     return redirectTarget.value;
   }
-  if (user.username === "yk") return "/transfer";
+  if (user.is_guest) return "/transfer";
   return "/today";
 }
 
@@ -109,8 +77,17 @@ async function submit(): Promise<void> {
     await router.replace(homeFor(user));
   } catch (err) {
     error.value = extractApiError(err);
+    void loadMaintenance();
   } finally {
     submitting.value = false;
+  }
+}
+
+async function loadMaintenance(): Promise<void> {
+  try {
+    maintenance.value = await fetchMaintenanceStatus();
+  } catch {
+    // 维护状态读取失败不能阻断正常登录。
   }
 }
 
@@ -119,105 +96,209 @@ function continueAsCurrent(): void {
   router.push(homeFor(auth.user));
 }
 
-async function switchAccount(): Promise<void> {
-  await auth.logout();
-  filledAccount.value = "";
+function switchAccount(): void {
+  void auth.logout();
   username.value = "";
   password.value = "";
   toast.info("已退出当前账号，请重新登录");
 }
 
-onMounted(async () => {
-  if (!auth.initialized) await auth.initialize();
+onMounted(() => {
+  disposeParticleField = mountParticleField(particleCanvas.value);
+  if (!auth.initialized) void auth.initialize();
+  // 公告改为页面顶部居中展示，不再自动弹窗；历史记录按需在弹窗中查看。
+  void announcements.load(true);
+  void announcements.loadHistory(true);
+  void loadMaintenance();
 });
+
+onUnmounted(() => disposeParticleField?.());
+
+type Particle = {
+  angle: number;
+  orbit: number;
+  speed: number;
+  phase: number;
+  size: number;
+  hue: number;
+};
+
+function mountParticleField(canvas: HTMLCanvasElement | null): (() => void) | null {
+  if (!canvas) return null;
+  const canvasElement: HTMLCanvasElement = canvas;
+  const contextResult = canvasElement.getContext("2d", { alpha: true, desynchronized: true });
+  if (!contextResult) return null;
+  const context: CanvasRenderingContext2D = contextResult;
+
+  const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let width = 0;
+  let height = 0;
+  let frame = 0;
+  let previousTime = 0;
+  const particles: Particle[] = Array.from({ length: 142 }, () => ({
+    angle: Math.random() * Math.PI * 2,
+    orbit: 0.06 + Math.sqrt(Math.random()) * 0.91,
+    speed: (0.00009 + Math.random() * 0.00025) * (Math.random() > 0.5 ? 1 : -1),
+    phase: Math.random() * Math.PI * 2,
+    size: 0.45 + Math.random() * 1.3,
+    hue: [184, 197, 215, 232, 250][Math.floor(Math.random() * 5)],
+  }));
+
+  function stop(): void {
+    if (!frame) return;
+    cancelAnimationFrame(frame);
+    frame = 0;
+  }
+
+  function draw(time: number): void {
+    frame = 0;
+    if (!width || !height || document.hidden) return;
+
+    const delta = previousTime ? Math.min(time - previousTime, 40) : 16;
+    previousTime = time;
+    const cx = width * 0.5;
+    const cy = height * 0.51;
+    const radius = Math.min(width, height) * 0.47;
+    context.clearRect(0, 0, width, height);
+    context.globalCompositeOperation = "screen";
+
+    // Fine elliptical filaments give the particles a visible orbital field.
+    for (let index = 0; index < 4; index += 1) {
+      const drift = time * (index % 2 ? -0.000035 : 0.000028);
+      context.beginPath();
+      context.ellipse(
+        cx,
+        cy,
+        radius * (0.44 + index * 0.135),
+        radius * (0.18 + index * 0.06),
+        drift + index * 0.53,
+        0,
+        Math.PI * 2,
+      );
+      context.strokeStyle = `rgba(${index % 2 ? "133, 174, 255" : "80, 235, 255"}, ${0.08 + index * 0.02})`;
+      context.lineWidth = 0.85;
+      context.stroke();
+    }
+
+    for (const particle of particles) {
+      particle.angle += particle.speed * delta;
+      const wave = Math.sin(time * 0.00042 + particle.phase) * 0.014;
+      const r = radius * (particle.orbit + wave);
+      const angle = particle.angle + particle.orbit * 1.65;
+      const x = cx + Math.cos(angle) * r;
+      const y = cy + Math.sin(angle) * r * 0.72;
+      const tailLength = 4 + particle.size * 4;
+      const tangent = angle + Math.PI * 0.5;
+      const alpha = 0.32 + (Math.sin(time * 0.0011 + particle.phase) + 1) * 0.28;
+
+      context.beginPath();
+      context.moveTo(x - Math.cos(tangent) * tailLength, y - Math.sin(tangent) * tailLength * 0.72);
+      context.lineTo(x, y);
+      context.strokeStyle = `hsla(${particle.hue}, 100%, 78%, ${alpha * 0.82})`;
+      context.lineWidth = Math.max(0.65, particle.size * 0.82);
+      context.stroke();
+
+      context.beginPath();
+      context.arc(x, y, particle.size * (0.72 + alpha * 0.52), 0, Math.PI * 2);
+      context.fillStyle = `hsla(${particle.hue}, 100%, 88%, ${alpha})`;
+      context.fill();
+    }
+
+    context.globalCompositeOperation = "source-over";
+    if (!motionPreference.matches) frame = requestAnimationFrame(draw);
+  }
+
+  function resize(): void {
+    const bounds = canvasElement.getBoundingClientRect();
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+    width = bounds.width;
+    height = bounds.height;
+    canvasElement.width = Math.round(width * pixelRatio);
+    canvasElement.height = Math.round(height * pixelRatio);
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    previousTime = 0;
+    stop();
+    if (width && height) draw(performance.now());
+  }
+
+  function onVisibilityChange(): void {
+    if (document.hidden) {
+      stop();
+      return;
+    }
+    if (!motionPreference.matches && !frame) frame = requestAnimationFrame(draw);
+  }
+
+  function onMotionPreferenceChange(): void {
+    previousTime = 0;
+    stop();
+    draw(performance.now());
+  }
+
+  const observer = new ResizeObserver(resize);
+  observer.observe(canvasElement);
+  motionPreference.addEventListener("change", onMotionPreferenceChange);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  resize();
+
+  return () => {
+    stop();
+    observer.disconnect();
+    motionPreference.removeEventListener("change", onMotionPreferenceChange);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+  };
+}
 </script>
 
 <template>
   <div class="login-page h-full overflow-y-auto">
-    <div class="grid min-h-[100dvh] lg:grid-cols-[1.06fr_0.94fr]">
-      <section class="visual-panel relative hidden overflow-hidden p-12 lg:flex lg:flex-col xl:p-16">
+    <div class="grid min-h-[100dvh] md:grid-cols-[0.82fr_1.18fr] lg:grid-cols-[1.06fr_0.94fr]">
+      <section class="visual-panel relative hidden overflow-hidden p-12 md:flex md:flex-col xl:p-16">
         <div class="visual-grid" aria-hidden="true" />
         <div class="visual-glow visual-glow-a" aria-hidden="true" />
         <div class="visual-glow visual-glow-b" aria-hidden="true" />
         <div class="visual-ring visual-ring-a" aria-hidden="true" />
         <div class="visual-ring visual-ring-b" aria-hidden="true" />
 
-        <RouterLink to="/agent" class="relative z-10 flex w-fit items-center gap-3">
-          <BrandMark :size="34" />
-          <span class="text-[16px] font-semibold tracking-tight text-white">zixxx</span>
-        </RouterLink>
-
-        <div class="relative z-10 mt-auto max-w-[510px] pb-5">
-          <span class="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/8 px-3 py-1.5 text-[9.5px] font-semibold uppercase tracking-[0.18em] text-white/65 backdrop-blur">
-            <span class="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(103,232,249,.9)]" />
-            Private space for two
-          </span>
-          <h2 class="mt-7 text-[39px] font-medium leading-[1.17] tracking-[-0.045em] text-white xl:text-[46px]">
-            把重要的对话，<br />留在自己的服务器里。
-          </h2>
-          <p class="mt-5 max-w-[430px] text-[13.5px] leading-7 text-white/50">
-            一个安静、克制、完全自托管的工作空间。AI、密聊与文件，在这里各自拥有清晰的边界。
-          </p>
-
-          <div class="mt-9 grid max-w-[460px] gap-3">
-            <div class="feature-row">
-              <span class="feature-icon"><MessagesSquare :size="16" /></span>
-              <div>
-                <p class="text-[12px] font-medium text-white/85">双人实时密聊</p>
-                <p class="mt-0.5 text-[10.5px] text-white/40">WebSocket 低延迟通道，仅 qzx 与 sqx 可见</p>
-              </div>
-            </div>
-            <div class="feature-row">
-              <span class="feature-icon"><HardDriveUpload :size="16" /></span>
-              <div>
-                <p class="text-[12px] font-medium text-white/85">免密文件中转</p>
-                <p class="mt-0.5 text-[10.5px] text-white/40">访客即传即取，私密文件只有 qzx 能看到</p>
-              </div>
-            </div>
-            <div class="feature-row">
-              <span class="feature-icon"><Sparkles :size="16" /></span>
-              <div>
-                <p class="text-[12px] font-medium text-white/85">你自己的 AI</p>
-                <p class="mt-0.5 text-[10.5px] text-white/40">连接任意 OpenAI / Gemini / Claude 兼容接口</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="relative z-10 mt-7 flex items-end justify-between">
-          <p class="text-[9px] uppercase tracking-[0.18em] text-white/25">Self-hosted · SQLite · Django</p>
-          <div class="sample-chat">
-            <div class="flex items-center gap-2">
-              <span class="flex h-5 w-5 items-center justify-center rounded-full bg-gradient-to-br from-indigo-400 to-cyan-400 text-[8px] font-bold text-white">Q</span>
-              <span class="text-[9px] font-medium text-white/65">qzx</span>
-              <span class="ml-auto text-[8px] text-white/25">now</span>
-            </div>
-            <p class="mt-2 text-[10px] leading-4 text-white/55">文件已经放上中转站了，只有你能看到。</p>
-            <div class="mt-2 flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">
-              <LockKeyhole :size="9" class="text-cyan-300/80" />
-              <span class="text-[8.5px] text-white/45">仅 qzx 可见 · 私密投递</span>
-            </div>
-          </div>
+        <div class="login-art-wrap relative z-10 flex flex-1 items-center justify-center" aria-hidden="true">
+          <canvas ref="particleCanvas" class="particle-canvas" />
         </div>
       </section>
 
       <section class="relative flex min-h-[100dvh] flex-col bg-[#fbfcfd]">
         <div class="flex items-center justify-between px-6 pt-6 sm:px-10">
-          <RouterLink to="/agent" class="flex items-center gap-2.5 lg:hidden">
+          <RouterLink to="/agent" class="flex items-center gap-2.5 md:hidden">
             <BrandMark :size="29" />
             <span class="text-[14px] font-semibold tracking-tight text-ink-900">zixxx</span>
-          </RouterLink>
-          <RouterLink
-            to="/transfer"
-            class="ml-auto inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-[11px] font-medium text-ink-500 shadow-sm transition hover:border-slate-300 hover:text-ink-800"
-          >
-            <ArrowLeft :size="13" />
-            免密中转站
           </RouterLink>
         </div>
 
         <div class="flex flex-1 items-center justify-center px-6 pb-10 pt-8 sm:px-10 sm:pt-4">
           <div class="w-full max-w-[420px] animate-fade-up">
+            <div
+              v-if="announcements.hasLogin"
+              class="mb-5 rounded-2xl border border-blue-100 bg-blue-50/80 px-4 py-3.5 text-center"
+              aria-label="站点公告"
+            >
+              <p class="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-blue-500">
+                站点公告
+              </p>
+              <p class="mt-1.5 max-h-32 overflow-y-auto whitespace-pre-wrap break-words text-[12px] leading-6 text-ink-700">
+                {{ announcements.loginContent }}
+              </p>
+              <button
+                type="button"
+                class="mt-2 text-[10.5px] font-medium text-blue-600 underline underline-offset-2 transition hover:text-blue-700"
+                @click="announcementOpen = true"
+              >
+                查看历史公告
+              </button>
+            </div>
+            <img
+              :src="brandLogo"
+              alt="zixxx 标志"
+              class="mx-auto mb-3 h-auto w-[210px] object-contain sm:w-[250px]"
+            />
             <span class="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent-600">
               <Sparkles :size="12" />
               Secure entry
@@ -226,15 +307,32 @@ onMounted(async () => {
               进入你的专属空间
             </h1>
             <p class="mt-2.5 text-[12.5px] leading-6 text-ink-500">
-              登录后即可使用 AI 对话与双人密聊；公开文件中转站无需账号，打开即传。
+              登录后即可使用个人工作台与 AI 对话；公开文件中转站无需账号，打开即传。
             </p>
+
+            <div
+              v-if="maintenance?.enabled"
+              role="status"
+              class="mt-6 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3.5"
+            >
+              <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600">
+                <Wrench :size="15" />
+              </span>
+              <div class="min-w-0">
+                <p class="text-[12px] font-semibold text-amber-800">系统维护中</p>
+                <p class="mt-0.5 text-[10.5px] leading-5 text-amber-700">
+                  {{ maintenance?.reason || "站点暂时关闭登录，仅最高管理员可进入。" }}
+                  其他账号请稍后再试。
+                </p>
+              </div>
+            </div>
 
             <div
               v-if="auth.isAuthenticated && auth.user"
               class="mt-6 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm"
             >
               <div class="flex items-center gap-3">
-                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-blue-500 to-cyan-400 text-[13px] font-semibold text-white">
+                <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-600 text-[13px] font-semibold text-white">
                   {{ initials(auth.user.username) }}
                 </span>
                 <div class="min-w-0 flex-1">
@@ -277,7 +375,6 @@ onMounted(async () => {
                     v-model="username"
                     type="text"
                     class="field-input"
-                    placeholder="qzx / sqx / yk"
                     autocomplete="username"
                     autocapitalize="none"
                     spellcheck="false"
@@ -310,6 +407,14 @@ onMounted(async () => {
                 </div>
               </div>
 
+              <RouterLink
+                to="/transfer"
+                class="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-[12px] font-semibold text-ink-700 shadow-sm transition duration-200 hover:border-accent-300 hover:bg-accent-50"
+              >
+                <ArrowLeft :size="14" />
+                免密中转站
+              </RouterLink>
+
               <div
                 v-if="error"
                 class="flex items-center gap-2 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5 text-[11px] text-rose-600"
@@ -331,48 +436,17 @@ onMounted(async () => {
               </button>
             </form>
 
-            <div class="mt-7">
-              <div class="mb-2.5 flex items-center justify-between">
-                <p class="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-ink-400">账号</p>
-                <span class="text-[9.5px] text-ink-300">点击填入用户名</span>
-              </div>
-              <div class="grid gap-2">
-                <button
-                  v-for="account in quickAccounts"
-                  :key="account.username"
-                  type="button"
-                  class="flex items-center gap-2.5 rounded-xl border p-2.5 text-left transition duration-200"
-                  :class="accountCardClass(account.username)"
-                  @click="fillAccount(account.username)"
-                >
-                  <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border" :class="account.accent">
-                    <component :is="account.icon" :size="13" />
-                  </span>
-                  <span class="min-w-0 flex-1">
-                    <span class="flex items-center gap-1.5">
-                      <span class="text-[11px] font-semibold text-ink-800">{{ account.username }}</span>
-                      <span class="text-[9px] text-ink-400">{{ account.role }}</span>
-                    </span>
-                    <span class="mt-0.5 block truncate text-[9px] text-ink-300">{{ account.hint }}</span>
-                  </span>
-                  <Check v-if="filledAccount === account.username" :size="13" class="text-accent-500" />
-                  <ArrowRight v-else :size="12" class="text-ink-300" />
-                </button>
-              </div>
-            </div>
-
-            <div class="mt-7 flex items-center gap-2 rounded-xl bg-slate-100/70 px-3 py-2.5">
-              <LockKeyhole :size="12" class="shrink-0 text-ink-400" />
-              <p class="text-[9.5px] leading-4 text-ink-400">
-                登录凭证以 Token 保存于浏览器。正式部署时请修改默认密码，并在反向代理层启用 HTTPS。
-              </p>
-            </div>
-
             <div class="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[10px] text-ink-400">
-              <RouterLink to="/transfer" class="transition hover:text-ink-700">免密文件中转站</RouterLink>
-              <span class="h-2.5 w-px bg-slate-200" />
               <button type="button" class="underline underline-offset-2 transition hover:text-ink-700" @click="termsOpen = true">
                 使用声明
+              </button>
+              <button
+                v-if="announcements.hasAny || announcements.hasHistory"
+                type="button"
+                class="underline underline-offset-2 transition hover:text-ink-700"
+                @click="announcementOpen = true"
+              >
+                公告与历史
               </button>
             </div>
           </div>
@@ -383,6 +457,21 @@ onMounted(async () => {
     </div>
 
     <UsageTermsModal :open="termsOpen" @close="termsOpen = false" />
+
+    <ModalShell
+      :open="announcementOpen"
+      title="公告"
+      subtitle="当前公告与历史记录"
+      max-width="max-w-lg"
+      @close="announcementOpen = false"
+    >
+      <AnnouncementBody />
+      <template #footer>
+        <button type="button" class="btn-primary" @click="announcementOpen = false">
+          我知道了
+        </button>
+      </template>
+    </ModalShell>
   </div>
 </template>
 
@@ -448,37 +537,56 @@ onMounted(async () => {
   border-color: rgba(125, 211, 252, 0.08);
 }
 
-.feature-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.035);
-  padding: 11px 13px;
-  backdrop-filter: blur(10px);
+.login-art-wrap {
+  min-height: 360px;
+  isolation: isolate;
 }
 
-.feature-icon {
-  display: inline-flex;
-  height: 30px;
-  width: 30px;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(165, 201, 255, 0.92);
+.login-art-wrap::before,
+.login-art-wrap::after {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  content: "";
+  pointer-events: none;
+  transform: translate(-50%, -50%);
 }
 
-.sample-chat {
-  width: 218px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 15px;
-  background: rgba(255, 255, 255, 0.055);
-  padding: 11px 12px;
-  box-shadow: 0 24px 50px -30px rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(16px);
-  transform: rotate(-2deg);
+.login-art-wrap::before {
+  width: min(68%, 520px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.24), rgba(59, 130, 246, 0.14) 34%, rgba(99, 102, 241, 0.07) 53%, transparent 72%);
+  filter: blur(18px);
+  animation: particle-bloom 8s ease-in-out infinite alternate;
+}
+
+.login-art-wrap::after {
+  width: min(76%, 590px);
+  aspect-ratio: 1.72;
+  border: 1px solid rgba(119, 194, 255, 0.17);
+  border-radius: 50%;
+  box-shadow: 0 0 65px rgba(34, 211, 238, 0.08), inset 0 0 65px rgba(99, 102, 241, 0.06);
+  transform: translate(-50%, -50%) rotate(-23deg);
+}
+
+.particle-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+@keyframes particle-bloom {
+  from { opacity: 0.65; scale: 0.9; }
+  to { opacity: 1; scale: 1.08; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-art-wrap::before {
+    animation: none;
+  }
 }
 </style>

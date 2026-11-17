@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, useId } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     open: boolean;
     title: string;
@@ -21,6 +21,17 @@ const emit = defineEmits<{
 }>();
 
 const titleId = useId();
+const panelRef = ref<HTMLElement | null>(null);
+let previousFocus: HTMLElement | null = null;
+
+const focusableSelector = [
+  "button:not([disabled])",
+  "a[href]",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
 
 function onBackdrop(): void {
   emit("close");
@@ -32,7 +43,38 @@ function onClose(): void {
 
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === "Escape") emit("close");
+  if (event.key !== "Tab" || !panelRef.value) return;
+  const focusable = Array.from(panelRef.value.querySelectorAll<HTMLElement>(focusableSelector));
+  if (!focusable.length) {
+    event.preventDefault();
+    panelRef.value.focus();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 }
+
+watch(
+  () => props.open,
+  async (open) => {
+    if (open) {
+      previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      await nextTick();
+      const first = panelRef.value?.querySelector<HTMLElement>(focusableSelector);
+      (first ?? panelRef.value)?.focus();
+    } else if (previousFocus?.isConnected) {
+      previousFocus.focus();
+      previousFocus = null;
+    }
+  },
+);
 
 onMounted(() => document.addEventListener("keydown", onKeydown));
 onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
@@ -43,20 +85,22 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
     <Transition name="modal">
       <div
         v-if="open"
-        class="fixed inset-0 z-[90] flex items-end justify-center bg-ink-950/35 p-0 backdrop-blur-[3px] sm:items-center sm:p-6"
+        class="fixed inset-0 z-[90] flex items-end justify-center bg-black/25 p-0 backdrop-blur-sm sm:items-center sm:p-6"
         role="presentation"
         @mousedown.self="onBackdrop"
         @keydown="onKeydown"
       >
         <div
-          class="modal-panel flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[28px] border border-white/70 bg-white shadow-[0_30px_100px_-30px_rgba(15,23,42,0.45)] sm:rounded-[28px]"
+          ref="panelRef"
+          class="modal-panel flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-elevated sm:rounded-2xl"
           :class="maxWidth"
           role="dialog"
           aria-modal="true"
           :aria-labelledby="titleId"
           tabindex="-1"
+          style="border: 1px solid var(--apple-border)"
         >
-          <header class="flex items-start gap-4 border-b border-slate-100 px-6 py-5">
+          <header class="flex items-start gap-4 border-b px-6 py-5" style="border-color: var(--apple-border)">
             <div class="min-w-0 flex-1">
               <h2 :id="titleId" class="text-[17px] font-semibold tracking-tight text-ink-900">
                 {{ title }}
@@ -68,11 +112,11 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
             <button
               v-if="!hideClose"
               type="button"
-              class="icon-button -mr-2 -mt-1 h-9 w-9 shrink-0"
+              class="icon-button -mr-2 -mt-1 h-11 w-11 shrink-0 rounded-full bg-black/[0.04] hover:bg-black/[0.08]"
               aria-label="关闭"
               @click="onClose"
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                 <path d="M18 6 6 18M6 6l12 12" />
               </svg>
             </button>
@@ -84,7 +128,8 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
 
           <footer
             v-if="$slots.footer"
-            class="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50/70 px-6 py-4"
+            class="flex items-center justify-end gap-2 border-t px-6 py-4"
+            style="border-color: var(--apple-border); background: #fafafa"
           >
             <slot name="footer" />
           </footer>
