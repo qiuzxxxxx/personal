@@ -1,5 +1,5 @@
 import api from "./client";
-import type { PagedResult } from "@/types";
+import type { PagedResult, ReviewCard, ReviewGrade } from "@/types";
 
 export interface KnowledgeCollection {
   id: string;
@@ -308,5 +308,32 @@ export async function exportKnowledge(): Promise<{
   memories: Record<string, unknown>[];
 }> {
   const { data } = await api.get("/knowledge/export/");
+  return data;
+}
+
+export async function fetchReviewCards(): Promise<ReviewCard[]> {
+  const { data } = await api.get<ReviewCard[]>("/knowledge/reviews/");
+  return data;
+}
+
+export async function createReviewCard(payload: {
+  front: string;
+  back: string;
+  tag?: string;
+  document?: string | null;
+}): Promise<ReviewCard> {
+  const { data } = await api.post<ReviewCard>("/knowledge/reviews/", payload);
+  return data;
+}
+
+export async function gradeReviewCard(
+  id: string,
+  grade: ReviewGrade,
+  version?: number,
+): Promise<ReviewCard> {
+  const { data } = await api.post<ReviewCard>(`/knowledge/reviews/${id}/grade/`, {
+    grade,
+    version,
+  });
   return data;
 }

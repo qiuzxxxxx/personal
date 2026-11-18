@@ -297,7 +297,7 @@ async function save(): Promise<void> {
             v-model="draft.system_prompt"
             rows="3"
             class="field-textarea mt-1.5"
-            placeholder="留空则使用 zixxx 默认系统提示词。你也可以定义专属语气、身份或回答规范。"
+            placeholder="留空则使用 缺页中断 默认系统提示词。你也可以定义专属语气、身份或回答规范。"
           />
         </div>
       </section>

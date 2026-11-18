@@ -19,7 +19,7 @@ const props = withDefaults(
     disabled: false,
     providerLabel: "DeepSeek",
     configured: false,
-    placeholder: "向 zixxx 提问，或拖入文件…",
+    placeholder: "向 缺页中断 提问，或拖入文件…",
   },
 );
 

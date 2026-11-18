@@ -1,3 +1,16 @@
+export function localDateIso(value: Date = new Date()): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function shiftIsoDays(iso: string, days: number): string {
+  const date = new Date(`${iso}T00:00:00`);
+  date.setDate(date.getDate() + days);
+  return localDateIso(date);
+}
+
 export function formatBytes(bytes: number | null | undefined): string {
   const value = Number(bytes) || 0;
   if (value <= 0) return "0 B";

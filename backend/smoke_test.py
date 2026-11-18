@@ -1,4 +1,4 @@
-"""Small end-to-end smoke test against a running zixxx backend.
+"""Small end-to-end smoke test against a running 缺页中断 backend.
 
 Usage:
     python smoke_test.py http://127.0.0.1:8000

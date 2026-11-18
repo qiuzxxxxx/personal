@@ -53,7 +53,7 @@ SEED_ENTRIES = [
     },
 ]
 
-PROJECT_NAME = "zixxx"
+PROJECT_NAME = "缺页中断"
 COLLECTION_NAME = "工作台项目"
 
 
@@ -98,13 +98,13 @@ class Command(BaseCommand):
                     project = Project.objects.create(
                         owner=user,
                         name=PROJECT_NAME,
-                        description="zixxx 个人工作台项目范围。",
+                        description="缺页中断 个人工作台项目范围。",
                     )
                 if collection is None:
                     collection = KnowledgeCollection.objects.create(
                         owner=user,
                         name=COLLECTION_NAME,
-                        description="与 zixxx 项目相关的知识集合。",
+                        description="与 缺页中断 项目相关的知识集合。",
                         project=project,
                     )
                 try:

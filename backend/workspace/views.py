@@ -9,7 +9,7 @@ from datetime import date as date_cls
 from datetime import datetime, time, timedelta
 
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Max, Q
+from django.db.models import Count, F, Max, Q
 from django.utils import timezone as django_timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -19,7 +19,10 @@ from config.http import BadRequest, error, no_store, paginate, parse_date
 
 from .models import (
     OPEN_TASK_STATUSES,
+    CalendarBlock,
     DailyEntry,
+    FocusSession,
+    Material,
     Project,
     Tag,
     Task,
@@ -27,8 +30,13 @@ from .models import (
     normalize_tag_name,
 )
 from .serializers import (
+    CalendarBlockPatchSerializer,
+    CalendarBlockSerializer,
+    CalendarBlockWriteSerializer,
     DailyEntrySerializer,
     DailyEntryWriteSerializer,
+    FocusSessionSerializer,
+    FocusSessionWriteSerializer,
     ProjectPatchSerializer,
     ProjectSerializer,
     ProjectWriteSerializer,
@@ -163,6 +171,7 @@ def task_payload_signature(data: dict) -> tuple:
         data.get("status") or "todo",
         data.get("priority") or "normal",
         str(data.get("scheduled_date") or ""),
+        str(data.get("estimated_minutes") or 45),
         str(data.get("due_at") or ""),
         str(data.get("project") or ""),
         tuple(sorted(str(item) for item in (data.get("tags") or []))),
@@ -317,6 +326,7 @@ def task_list(request):
                     "status": existing.status,
                     "priority": existing.priority,
                     "scheduled_date": existing.scheduled_date,
+                    "estimated_minutes": existing.estimated_minutes,
                     "due_at": existing.due_at,
                     "project": existing.project_id,
                     "tags": [tag.id for tag in existing.tags.all()],
@@ -346,6 +356,7 @@ def task_list(request):
         status=status,
         priority=data.get("priority") or "normal",
         scheduled_date=data.get("scheduled_date"),
+        estimated_minutes=data.get("estimated_minutes") or 45,
         due_at=data.get("due_at"),
         client_request_id=client_request_id,
         position=next_task_position(request.user),
@@ -377,7 +388,7 @@ def task_detail(request, task_id):
             return no_store(Response(TaskSerializer(task).data))
         Task.objects.filter(pk=task.pk).update(
             deleted_at=django_timezone.now(),
-            version=task.version + 1,
+            version=F("version") + 1,
             updated_at=django_timezone.now(),
         )
         task.refresh_from_db()
@@ -410,6 +421,8 @@ def task_detail(request, task_id):
         fields["priority"] = data["priority"]
     if "scheduled_date" in data:
         fields["scheduled_date"] = data.get("scheduled_date")
+    if "estimated_minutes" in data:
+        fields["estimated_minutes"] = data["estimated_minutes"]
     if "due_at" in data:
         fields["due_at"] = data.get("due_at")
     if "project" in data:
@@ -449,7 +462,7 @@ def task_restore(request, task_id):
     if task.deleted_at is None:
         return no_store(Response(TaskSerializer(task).data))
     Task.objects.filter(pk=task.pk, version=task.version).update(
-        deleted_at=None, version=task.version + 1, updated_at=django_timezone.now()
+        deleted_at=None, version=F("version") + 1, updated_at=django_timezone.now()
     )
     task.refresh_from_db()
     return no_store(Response(TaskSerializer(task).data))
@@ -480,7 +493,11 @@ def task_reorder(request):
             return error("items 中的元素缺少有效的 version。", 400, code="invalid_payload")
 
     with transaction.atomic():
-        listed = list(Task.objects.filter(id__in=ordered_ids, owner=request.user))
+        listed = list(
+            Task.objects.filter(
+                id__in=ordered_ids, owner=request.user, deleted_at__isnull=True
+            )
+        )
         found = {str(task.id) for task in listed}
         missing = [item for item in ordered_ids if item not in found]
         if missing:
@@ -506,7 +523,7 @@ def task_reorder(request):
                 Task.objects.filter(pk=task.pk).update(position=index, updated_at=now)
             if str(task.id) in versions:
                 Task.objects.filter(pk=task.pk).update(
-                    version=task.version + 1, updated_at=now
+                    version=F("version") + 1, updated_at=now
                 )
     updated = list(Task.objects.filter(id__in=ordered_ids, owner=request.user))
     updated.sort(key=lambda task: task.position)
@@ -769,4 +786,429 @@ def journal(request, day):
     entry.refresh_from_db()
     payload = DailyEntrySerializer(entry).data
     payload["exists"] = True
+    return no_store(Response(payload))
+
+
+# --------------------------------------------------------------------------- #
+# calendar / focus / unified search
+# --------------------------------------------------------------------------- #
+def week_start_for(user, day: date_cls) -> date_cls:
+    preference = getattr(user, "workspace_preference", None)
+    starts_on = preference.week_starts_on if preference else 1
+    offset = (day.weekday() - (starts_on - 1)) % 7
+    return day - timedelta(days=offset)
+
+
+def time_from_minutes(total: int) -> time:
+    total = max(0, min(23 * 60 + 59, total))
+    return time(total // 60, total % 60)
+
+
+def sync_task_schedule(task: Task | None) -> None:
+    """Keep ``Task.scheduled_date`` equal to the earliest active block."""
+
+    if task is None:
+        return
+    earliest = (
+        CalendarBlock.objects.filter(
+            task=task, owner=task.owner, deleted_at__isnull=True
+        )
+        .order_by("day_date", "start_time")
+        .values_list("day_date", flat=True)
+        .first()
+    )
+    if task.scheduled_date != earliest:
+        task.scheduled_date = earliest
+        task.save(update_fields=["scheduled_date", "updated_at"])
+        task.bump_version()
+
+
+@api_view(["GET"])
+@permission_classes([CanUseWorkspace])
+def calendar_week(request):
+    raw = request.query_params.get("week_start")
+    today = local_today(request.user)
+    anchor = parse_day(raw) if raw else today
+    start = week_start_for(request.user, anchor)
+    end = start + timedelta(days=6)
+
+    blocks = (
+        CalendarBlock.objects.filter(
+            owner=request.user,
+            deleted_at__isnull=True,
+            day_date__range=(start, end),
+        )
+        .select_related("task")
+        .order_by("day_date", "start_time", "created_at")
+    )
+    unscheduled = (
+        Task.objects.filter(
+            owner=request.user,
+            deleted_at__isnull=True,
+            status__in=OPEN_TASK_STATUSES,
+            scheduled_date__isnull=True,
+        )
+        .select_related("project")
+        .order_by("position", "created_at")
+    )
+    payload = {
+        "week_start": start.isoformat(),
+        "week_end": end.isoformat(),
+        "blocks": CalendarBlockSerializer(blocks, many=True).data,
+        "unscheduled_tasks": TaskSerializer(unscheduled, many=True).data,
+        "total_scheduled_minutes": sum(block.duration_minutes for block in blocks),
+    }
+    return no_store(Response(payload))
+
+
+@api_view(["GET"])
+@permission_classes([CanUseWorkspace])
+def calendar_month(request):
+    raw = (request.query_params.get("month") or local_today(request.user).isoformat())[:7]
+    try:
+        year, month = (int(part) for part in raw.split("-")[:2])
+        first = date_cls(year, month, 1)
+    except (TypeError, ValueError):
+        return error("month 必须是 YYYY-MM 格式。", 400, code="invalid_month")
+    next_month = date_cls(year + (1 if month == 12 else 0), 1 if month == 12 else month + 1, 1)
+    last = next_month - timedelta(days=1)
+    blocks = (
+        CalendarBlock.objects.filter(
+            owner=request.user,
+            deleted_at__isnull=True,
+            day_date__range=(first, last),
+        )
+        .select_related("task")
+        .order_by("day_date", "start_time", "created_at")
+    )
+    return no_store(
+        Response(
+            {
+                "month": f"{year:04d}-{month:02d}",
+                "blocks": CalendarBlockSerializer(blocks, many=True).data,
+                "total_scheduled_minutes": sum(block.duration_minutes for block in blocks),
+            }
+        )
+    )
+
+
+@api_view(["POST"])
+@permission_classes([CanUseWorkspace])
+def calendar_block_list(request):
+    serializer = CalendarBlockWriteSerializer(
+        data=request.data if isinstance(request.data, dict) else {}
+    )
+    if not serializer.is_valid():
+        return serializer_error(serializer)
+    data = serializer.validated_data
+
+    task = None
+    if data.get("task_id"):
+        task = Task.objects.filter(
+            pk=data["task_id"], owner=request.user, deleted_at__isnull=True
+        ).first()
+        if task is None:
+            return error("任务不存在或不属于当前账号。", 400, code="invalid_reference")
+
+    title = (data.get("title") or (task.title if task else "")).strip()
+    if not title:
+        return error("日程标题不能为空。", 400, code="invalid_payload")
+
+    start_time = data["start_time"]
+    end_time = data.get("end_time")
+    if end_time is None:
+        minutes = data.get("duration_minutes") or (
+            task.estimated_minutes if task else 60
+        )
+        minutes = max(5, minutes)
+        start_total = start_time.hour * 60 + start_time.minute
+        if start_total + minutes > 23 * 60 + 59:
+            return error(
+                "日程时长超出当天结束时间，暂不支持跨午夜日程。",
+                400,
+                code="invalid_time_range",
+            )
+        end_time = time_from_minutes(start_total + minutes)
+    if end_time <= start_time:
+        return error("结束时间必须晚于开始时间。", 400, code="invalid_time_range")
+
+    with transaction.atomic():
+        block = CalendarBlock.objects.create(
+            owner=request.user,
+            task=task,
+            title=title,
+            block_type=data.get("block_type") or "task",
+            day_date=data["day_date"],
+            start_time=start_time,
+            end_time=end_time,
+            is_completed=bool(data.get("is_completed")),
+        )
+        if task is not None:
+            sync_task_schedule(task)
+    return Response(CalendarBlockSerializer(block).data, status=201)
+
+
+@api_view(["GET", "PATCH", "DELETE"])
+@permission_classes([CanUseWorkspace])
+def calendar_block_detail(request, block_id):
+    block = (
+        CalendarBlock.objects.filter(
+            pk=block_id, owner=request.user, deleted_at__isnull=True
+        )
+        .select_related("task")
+        .first()
+    )
+    if block is None:
+        return error("日程不存在。", 404, code="not_found")
+
+    if request.method == "GET":
+        return no_store(Response(CalendarBlockSerializer(block).data))
+
+    if request.method == "DELETE":
+        with transaction.atomic():
+            CalendarBlock.objects.filter(pk=block.pk).update(
+                deleted_at=django_timezone.now(),
+                version=F("version") + 1,
+                updated_at=django_timezone.now(),
+            )
+            sync_task_schedule(block.task)
+        block.refresh_from_db()
+        return no_store(Response(CalendarBlockSerializer(block).data))
+
+    serializer = CalendarBlockPatchSerializer(
+        data=request.data if isinstance(request.data, dict) else {}
+    )
+    if not serializer.is_valid():
+        return serializer_error(serializer)
+    data = serializer.validated_data
+    version = data.get("version")
+    if version is None:
+        return error("更新日程必须提交 version。", 400, code="version_required")
+
+    fields: dict = {}
+    for key in ("title", "block_type", "day_date", "start_time", "end_time", "is_completed"):
+        if key in data:
+            fields[key] = data[key]
+    if "duration_minutes" in data:
+        fields["duration_minutes"] = data["duration_minutes"]
+
+    start_time = fields.get("start_time", block.start_time)
+    end_time = fields.get("end_time", block.end_time)
+    if "duration_minutes" in fields and "end_time" not in fields:
+        start_total = start_time.hour * 60 + start_time.minute
+        if start_total + fields["duration_minutes"] > 23 * 60 + 59:
+            return error(
+                "日程时长超出当天结束时间，暂不支持跨午夜日程。",
+                400,
+                code="invalid_time_range",
+            )
+        end_time = time_from_minutes(start_total + fields["duration_minutes"])
+        fields["end_time"] = end_time
+    if end_time <= start_time:
+        return error("结束时间必须晚于开始时间。", 400, code="invalid_time_range")
+    started = datetime.combine(date_cls.min, start_time)
+    ended = datetime.combine(date_cls.min, end_time)
+    fields["duration_minutes"] = max(
+        1, int((ended - started).total_seconds() // 60)
+    )
+
+    with transaction.atomic():
+        updated = CalendarBlock.objects.filter(
+            pk=block.pk,
+            owner=request.user,
+            version=version,
+            deleted_at__isnull=True,
+        ).update(
+            version=version + 1,
+            updated_at=django_timezone.now(),
+            **fields,
+        )
+        if not updated:
+            current = CalendarBlock.objects.filter(
+                pk=block.pk, owner=request.user
+            ).first()
+            if current is None:
+                return error("日程不存在。", 404, code="not_found")
+            return error(
+                "日程已被其他设备修改，请刷新后重试。",
+                409,
+                code="version_conflict",
+                current_version=current.version,
+                current=CalendarBlockSerializer(current).data,
+            )
+        sync_task_schedule(block.task)
+    block.refresh_from_db()
+    return no_store(Response(CalendarBlockSerializer(block).data))
+
+
+@api_view(["GET", "POST"])
+@permission_classes([CanUseWorkspace])
+def focus_sessions(request):
+    if request.method == "POST":
+        serializer = FocusSessionWriteSerializer(
+            data=request.data if isinstance(request.data, dict) else {}
+        )
+        if not serializer.is_valid():
+            return serializer_error(serializer)
+        data = serializer.validated_data
+        task = None
+        if data.get("task_id"):
+            task = Task.objects.filter(
+                pk=data["task_id"], owner=request.user, deleted_at__isnull=True
+            ).first()
+            if task is None:
+                return error("任务不存在或不属于当前账号。", 400, code="invalid_reference")
+        session = FocusSession.objects.create(
+            owner=request.user,
+            task=task,
+            target_title=data["target_title"].strip(),
+            minutes=data["minutes"],
+        )
+        return Response(FocusSessionSerializer(session).data, status=201)
+
+    today = local_today(request.user)
+    start = week_start_for(request.user, today)
+    end = start + timedelta(days=6)
+    tz = user_timezone(request.user)
+    range_start = django_timezone.make_aware(datetime.combine(start, time.min), tz)
+    range_end = django_timezone.make_aware(
+        datetime.combine(end + timedelta(days=1), time.min), tz
+    )
+    sessions = list(
+        FocusSession.objects.filter(
+            owner=request.user,
+            created_at__gte=range_start,
+            created_at__lt=range_end,
+        ).order_by("created_at")
+    )
+    daily_totals = {start + timedelta(days=index): 0 for index in range(7)}
+    direction_totals: dict[str, int] = {}
+    for session in sessions:
+        local_day = django_timezone.localtime(session.created_at, tz).date()
+        if local_day in daily_totals:
+            daily_totals[local_day] += session.minutes
+        direction_totals[session.target_title] = (
+            direction_totals.get(session.target_title, 0) + session.minutes
+        )
+    top_direction = max(direction_totals, key=direction_totals.get) if direction_totals else ""
+    payload = {
+        "week_start": start.isoformat(),
+        "week_end": end.isoformat(),
+        "weekly_total_minutes": sum(daily_totals.values()),
+        "session_count": len(sessions),
+        "top_direction": top_direction,
+        "daily_series": [
+            {
+                "day": WEEKDAY_NAMES[day.weekday()].replace("星期", "周"),
+                "date": day.isoformat(),
+                "mins": minutes,
+            }
+            for day, minutes in daily_totals.items()
+        ],
+        "recent_logs": FocusSessionSerializer(
+            FocusSession.objects.filter(owner=request.user).order_by("-created_at")[:20],
+            many=True,
+        ).data,
+    }
+    return no_store(Response(payload))
+
+
+@api_view(["GET"])
+@permission_classes([CanUseWorkspace])
+def search_workspace(request):
+    keyword = (request.query_params.get("q") or "").strip()[:64]
+    empty = {
+        "query": keyword,
+        "tasks": [],
+        "projects": [],
+        "notes": [],
+        "materials": [],
+        "memories": [],
+    }
+    if not keyword:
+        return no_store(Response(empty))
+
+    from knowledge.models import KnowledgeDocument, PersonalMemory
+
+    tasks = (
+        Task.objects.filter(
+            owner=request.user,
+            deleted_at__isnull=True,
+        )
+        .filter(Q(title__icontains=keyword) | Q(description__icontains=keyword))
+        .select_related("project")
+        .order_by("-updated_at")[:5]
+    )
+    projects = (
+        Project.objects.filter(owner=request.user, deleted_at__isnull=True)
+        .filter(Q(name__icontains=keyword) | Q(description__icontains=keyword))
+        .order_by("-updated_at")[:5]
+    )
+    notes = (
+        KnowledgeDocument.objects.filter(
+            owner=request.user, deleted_at__isnull=True
+        )
+        .filter(Q(title__icontains=keyword) | Q(manual_body__icontains=keyword))
+        .order_by("-updated_at")[:5]
+    )
+    materials = (
+        Material.objects.filter(owner=request.user, deleted_at__isnull=True)
+        .filter(Q(original_name__icontains=keyword) | Q(remark__icontains=keyword))
+        .order_by("-updated_at")[:5]
+    )
+    memories = (
+        PersonalMemory.objects.filter(owner=request.user, deleted_at__isnull=True)
+        .filter(Q(key__icontains=keyword) | Q(content__icontains=keyword))
+        .order_by("-updated_at")[:5]
+    )
+
+    payload = {
+        "query": keyword,
+        "tasks": [
+            {
+                "id": str(task.id),
+                "title": task.title,
+                "status": task.status,
+                "project_name": task.project.name if task.project_id else "",
+                "route": "/tasks",
+            }
+            for task in tasks
+        ],
+        "projects": [
+            {
+                "id": str(project.id),
+                "name": project.name,
+                "status": project.status,
+                "route": "/tasks",
+            }
+            for project in projects
+        ],
+        "notes": [
+            {
+                "id": str(note.id),
+                "title": note.title,
+                "snippet": (note.manual_body or note.source_title or "")[:80],
+                "route": "/knowledge",
+            }
+            for note in notes
+        ],
+        "materials": [
+            {
+                "id": str(material.id),
+                "title": material.original_name,
+                "file_size": material.size_bytes,
+                "route": "/library",
+            }
+            for material in materials
+        ],
+        "memories": [
+            {
+                "id": str(memory.id),
+                "summary": (memory.content or memory.key)[:80],
+                "status": memory.status,
+                "route": "/knowledge",
+            }
+            for memory in memories
+        ],
+    }
     return no_store(Response(payload))

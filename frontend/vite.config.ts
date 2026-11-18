@@ -37,6 +37,7 @@ export default defineConfig(({ mode }) => {
         output: {
           manualChunks: {
             "md-render": ["markdown-it", "highlight.js", "katex"],
+            echarts: ["echarts"],
           },
         },
       },

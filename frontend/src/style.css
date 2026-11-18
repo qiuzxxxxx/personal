@@ -31,8 +31,8 @@ html {
 body {
   margin: 0;
   overflow: hidden;
-  background: var(--apple-bg);
-  color: var(--apple-text);
+  background: #f4f7fb;
+  color: #0f172a;
   font-family:
     -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
     Inter, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
@@ -91,6 +91,30 @@ a {
   isolation: isolate;
 }
 
+/* ---------------------------------------------------------------------------
+   Timeline drag & AI preview
+--------------------------------------------------------------------------- */
+.drop-active {
+  outline: 2px dashed #2563eb;
+  background-color: #eff6ff !important;
+}
+
+.preview-highlight {
+  outline: 2px dashed #2563eb;
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  animation: pulseSoft 1.5s infinite;
+}
+
+@keyframes pulseSoft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.65;
+  }
+}
+
 .app-frame {
   display: flex;
   height: 100dvh;
@@ -144,6 +168,14 @@ a {
 
   .field-label {
     @apply text-[12px] font-semibold text-ink-600;
+  }
+
+  .input-base {
+    @apply w-full rounded-xl border bg-white px-3 py-2 text-[13.5px] text-ink-800 outline-none transition-all duration-200 focus:ring-4 focus:ring-accent-500/10 placeholder:text-ink-300;
+    border-color: var(--apple-divider);
+  }
+  .input-base:focus {
+    border-color: var(--apple-blue);
   }
 
   .field-wrap {

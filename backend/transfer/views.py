@@ -169,9 +169,15 @@ def files(request):
             queryset = queryset.filter(Q(visible_until__isnull=True) | Q(visible_until__gt=timezone.now()))
         if is_transfer_admin(request.user):
             pass  # Admin sees everything, including private drops.
+        elif getattr(request.user, "is_authenticated", False):
+            # Uploaders may still see their own private drops; otherwise a
+            # private upload would vanish from their list immediately.
+            queryset = queryset.filter(
+                Q(is_public=True) | Q(uploader=request.user)
+            )
         else:
             # Private drops contain administrator-only data, including their
-            # metadata. Uploaders do not get a private-file exception.
+            # metadata. Anonymous visitors get no private-file exception.
             queryset = queryset.filter(is_public=True)
         # The response stays a plain list for the existing client, but the
         # number of rows is bounded so that a large table cannot produce an
@@ -309,10 +315,12 @@ def download(request, file_id):
     if record.visible_until and record.visible_until <= timezone.now():
         return Response({"detail": "该文件的可见时效已结束。"}, status=410)
     if not record.is_public and not is_transfer_admin(request.user):
-        return Response(
-            {"detail": "该文件为私密投递，仅最高管理员可以下载。"},
-            status=status.HTTP_403_FORBIDDEN,
-        )
+        uploader = getattr(record, "uploader", None)
+        if uploader is None or request.user != uploader:
+            return Response(
+                {"detail": "该文件为私密投递，仅最高管理员可以下载。"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
     if not record.file:
         return Response({"detail": "文件不存在。"}, status=404)
 

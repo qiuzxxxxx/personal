@@ -1,4 +1,4 @@
-"""Django settings for the zixxx self-hosted deployment."""
+"""Django settings for the 缺页中断 (Page Fault) self-hosted deployment."""
 import os
 from pathlib import Path
 

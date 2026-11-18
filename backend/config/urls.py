@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import include, path
 
+from accounts.site_about_view import site_about
 from .health import health, live
 
 
@@ -10,6 +11,7 @@ urlpatterns = [
     # and Redis. Neither endpoint exposes any user data.
     path("api/health/live/", live, name="health-live"),
     path("api/health/ready/", health, name="health-ready"),
+    path("api/about/", site_about, name="site-about"),
     path("api/auth/", include("accounts.urls")),
     path("api/agent/", include("agent.urls")),
     path("api/chat/", include("chat.urls")),

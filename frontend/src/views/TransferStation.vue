@@ -165,6 +165,12 @@ async function loadFiles(silent = false): Promise<void> {
   }
 }
 
+function openAnnouncement(): void {
+  announcementHistoryOpen.value = true;
+  void announcements.load(true);
+  void announcements.loadHistory(true).then(() => announcements.markSeen());
+}
+
 function openAnnouncementEditor(kind: "transfer" | "login"): void {
   if (!isAdmin.value) return;
   announcementKind.value = kind;
@@ -435,6 +441,10 @@ function clearFilters(): void {
 onMounted(async () => {
   await auth.initialize();
   await loadFiles();
+  // 中转站公告改为弹窗：首次加载到公告时自动弹出，页面不再内嵌公告区块。
+  void announcements.load(true).then(() => {
+    if (announcements.hasStation) openAnnouncement();
+  });
 });
 
 // Kept alive: silently refresh the list when returning to this section.
@@ -460,7 +470,7 @@ watch(
         <div class="flex items-start gap-3.5">
           <img
             :src="brandLogo"
-            alt="zixxx 标志"
+            alt="缺页中断 标志"
             class="h-auto w-[108px] shrink-0 object-contain sm:w-[176px]"
           />
           <div>
@@ -485,6 +495,15 @@ watch(
         </div>
 
         <div class="flex items-center gap-2 sm:pt-1">
+          <button
+            v-if="announcement"
+            type="button"
+            class="flex items-center gap-1.5 rounded-2xl border border-accent-100 bg-white/80 px-3.5 py-2 text-[11px] font-medium text-accent-600 shadow-sm transition hover:border-accent-200 hover:bg-white"
+            @click="openAnnouncement"
+          >
+            <Megaphone :size="14" />
+            站点公告
+          </button>
           <div
             v-if="isAdmin"
             class="flex items-center gap-2.5 rounded-2xl border border-amber-200/80 bg-amber-50/75 py-2 pl-2.5 pr-3.5 shadow-sm"
@@ -539,27 +558,6 @@ watch(
           登录页公告
         </button>
       </div>
-
-      <section
-        v-if="announcement"
-        class="mx-auto mt-5 w-full max-w-3xl rounded-2xl border border-accent-100/80 bg-gradient-to-r from-accent-50/80 to-blue-50/40 px-4 py-3.5 text-center text-[12px] leading-5 text-ink-700 shadow-sm backdrop-blur-sm"
-        aria-label="站点公告"
-      >
-        <div class="flex flex-col items-center gap-1.5">
-          <span class="flex items-center gap-1.5 text-[9.5px] font-semibold uppercase tracking-[0.12em] text-accent-600">
-            <Megaphone :size="12" />
-            站点公告
-          </span>
-          <p class="max-h-40 w-full overflow-y-auto whitespace-pre-wrap break-words leading-6">{{ announcement }}</p>
-          <button
-            type="button"
-            class="text-[10.5px] font-medium text-accent-600 underline underline-offset-2 transition hover:text-accent-700"
-            @click="announcementHistoryOpen = true"
-          >
-            查看历史公告
-          </button>
-        </div>
-      </section>
 
       <section class="upload-card mt-6 overflow-hidden rounded-[26px] border border-white/90 bg-white/85 shadow-[0_24px_70px_-42px_rgba(15,23,42,0.35)] backdrop-blur-xl">
         <div class="grid lg:grid-cols-[1.08fr_.92fr]">

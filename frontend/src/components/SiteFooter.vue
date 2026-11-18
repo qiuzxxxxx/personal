@@ -18,13 +18,20 @@ const icp = {
       class="mx-auto flex w-full max-w-[1140px] flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 py-2 text-[10px] text-ink-400 sm:justify-between"
     >
       <p>
-        © 2026 zixxx · 自托管个人空间 ·
+        © 2026 缺页中断 · 自托管个人空间 ·
         <a
           :href="`mailto:${contactEmail}`"
           class="transition hover:text-ink-700 hover:underline hover:underline-offset-2"
         >联系：{{ contactEmail }}</a>
       </p>
       <nav class="flex flex-wrap items-center justify-center gap-x-3 gap-y-1" aria-label="友情链接">
+        <RouterLink
+          to="/about"
+          class="transition hover:text-ink-700 hover:underline hover:underline-offset-2"
+        >
+          关于本站
+        </RouterLink>
+        <span class="h-2.5 w-px bg-ink-200" aria-hidden="true" />
         <span class="text-ink-300">友链</span>
         <a
           v-for="link in friendLinks"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onActivated, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import {
   CalendarDays,
@@ -147,6 +147,12 @@ onMounted(async () => {
   scheduleRefresh();
 });
 
+// KeepAlive 缓存页：任务 version 可能已被日历排期等操作在服务端递增，
+// 重新进入时重拉数据，避免点击任务按钮时一直 409“任务已被其他设备修改”。
+onActivated(() => {
+  void refresh();
+});
+
 onUnmounted(() => {
   window.clearInterval(timer);
 });
@@ -265,6 +271,7 @@ onUnmounted(() => {
                 <span v-if="task.priority !== 'normal'">
                   {{ task.priority === "high" ? "高优先级" : "低优先级" }}
                 </span>
+                <span>预计 {{ task.estimated_minutes }} 分钟</span>
                 <span v-for="tag in task.tags" :key="tag.id">#{{ tag.name }}</span>
               </p>
             </div>

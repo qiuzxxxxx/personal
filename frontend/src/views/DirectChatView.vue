@@ -206,6 +206,7 @@ async function confirmDelete(): Promise<void> {
   try {
     if (target.type === "post") {
       await deleteBbsPost(target.id);
+      posts.value = posts.value.filter((p) => p.id !== target.id);
       toast.success("帖子已删除");
     } else if (target.postId) {
       await deleteBbsReply(target.postId, target.id);
@@ -237,7 +238,7 @@ function goAgent(): void {
 }
 
 onMounted(async () => {
-  document.title = "留言板 · zixxx";
+  document.title = "留言板 · 缺页中断";
   await auth.initialize();
   if (!authorized.value) {
     loading.value = false;

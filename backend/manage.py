@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Django management entry point for zixxx."""
+"""Django management entry point for 缺页中断 (Page Fault)."""
 import os
 import sys
 

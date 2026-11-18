@@ -106,11 +106,19 @@ function switchAccount(): void {
 onMounted(() => {
   disposeParticleField = mountParticleField(particleCanvas.value);
   if (!auth.initialized) void auth.initialize();
-  // 公告改为页面顶部居中展示，不再自动弹窗；历史记录按需在弹窗中查看。
-  void announcements.load(true);
+  // 公告改为弹窗：读取完成后若存在登录页公告则自动弹出，页面不再内嵌公告区域。
+  void announcements.load(true).then(() => {
+    if (announcements.hasLogin) openAnnouncement();
+  });
   void announcements.loadHistory(true);
   void loadMaintenance();
 });
+
+function openAnnouncement(): void {
+  announcementOpen.value = true;
+  announcements.markSeen();
+  void announcements.loadHistory(true).then(() => announcements.markSeen());
+}
 
 onUnmounted(() => disposeParticleField?.());
 
@@ -269,34 +277,15 @@ function mountParticleField(canvas: HTMLCanvasElement | null): (() => void) | nu
         <div class="flex items-center justify-between px-6 pt-6 sm:px-10">
           <RouterLink to="/agent" class="flex items-center gap-2.5 md:hidden">
             <BrandMark :size="29" />
-            <span class="text-[14px] font-semibold tracking-tight text-ink-900">zixxx</span>
+            <span class="text-[14px] font-semibold tracking-tight text-ink-900">缺页中断</span>
           </RouterLink>
         </div>
 
         <div class="flex flex-1 items-center justify-center px-6 pb-10 pt-8 sm:px-10 sm:pt-4">
           <div class="w-full max-w-[420px] animate-fade-up">
-            <div
-              v-if="announcements.hasLogin"
-              class="mb-5 rounded-2xl border border-blue-100 bg-blue-50/80 px-4 py-3.5 text-center"
-              aria-label="站点公告"
-            >
-              <p class="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-blue-500">
-                站点公告
-              </p>
-              <p class="mt-1.5 max-h-32 overflow-y-auto whitespace-pre-wrap break-words text-[12px] leading-6 text-ink-700">
-                {{ announcements.loginContent }}
-              </p>
-              <button
-                type="button"
-                class="mt-2 text-[10.5px] font-medium text-blue-600 underline underline-offset-2 transition hover:text-blue-700"
-                @click="announcementOpen = true"
-              >
-                查看历史公告
-              </button>
-            </div>
             <img
               :src="brandLogo"
-              alt="zixxx 标志"
+              alt="缺页中断 标志"
               class="mx-auto mb-3 h-auto w-[210px] object-contain sm:w-[250px]"
             />
             <span class="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent-600">
@@ -444,7 +433,7 @@ function mountParticleField(canvas: HTMLCanvasElement | null): (() => void) | nu
                 v-if="announcements.hasAny || announcements.hasHistory"
                 type="button"
                 class="underline underline-offset-2 transition hover:text-ink-700"
-                @click="announcementOpen = true"
+                @click="openAnnouncement"
               >
                 公告与历史
               </button>

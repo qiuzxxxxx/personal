@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import zoneinfo
+from datetime import datetime, time, timedelta
 from time import monotonic
 
 import httpx
@@ -30,6 +32,7 @@ from .models import AgentAttachment, Conversation, Message, UserApiConfig
 from .parsing import MAX_ATTACHMENT_BYTES, AttachmentError, parse_attachment
 from .permissions import CanUseAgent
 from .retention import purge_expired_agent_history
+from workspace.models import OPEN_TASK_STATUSES, CalendarBlock, Task
 from .serializers import (
     AgentAttachmentSerializer,
     ChatRequestSerializer,
@@ -619,3 +622,81 @@ def chat(request):
     response["Cache-Control"] = "no-store, no-transform"
     response["X-Accel-Buffering"] = "no"
     return response
+
+
+@api_view(["GET"])
+@permission_classes([CanUseAgent])
+def suggestions(request):
+    """Suggest free timeline slots for unscheduled open tasks.
+
+    The first version is deterministic and requires no model call: it scans the
+    next seven local days from 09:00 to 21:00 and places the oldest backlog
+    items into the first gap that fits their estimated duration.
+    """
+
+    user = request.user
+    preference = getattr(user, "workspace_preference", None)
+    timezone_name = preference.timezone if preference else "Asia/Shanghai"
+    try:
+        tz = zoneinfo.ZoneInfo(timezone_name)
+    except Exception:
+        tz = zoneinfo.ZoneInfo("Asia/Shanghai")
+
+    today = datetime.now(tz).date()
+    tasks = list(
+        Task.objects.filter(
+            owner=user,
+            deleted_at__isnull=True,
+            status__in=OPEN_TASK_STATUSES,
+            scheduled_date__isnull=True,
+        ).order_by("position", "created_at")[:8]
+    )
+    blocks = CalendarBlock.objects.filter(
+        owner=user,
+        deleted_at__isnull=True,
+        day_date__range=(today, today + timedelta(days=6)),
+    )
+    busy: dict = {}
+    for block in blocks:
+        busy.setdefault(block.day_date, []).append(
+            (block.start_time.hour * 60 + block.start_time.minute,
+             block.end_time.hour * 60 + block.end_time.minute)
+        )
+
+    suggestions_payload = []
+    for task in tasks:
+        duration = max(15, min(120, task.estimated_minutes or 45))
+        slot = None
+        for offset in range(7):
+            day = today + timedelta(days=offset)
+            cursor = 9 * 60
+            limit = 21 * 60
+            for start_min, end_min in sorted(busy.get(day, [])):
+                if start_min - cursor >= duration:
+                    slot = (day, cursor)
+                    break
+                cursor = max(cursor, end_min)
+            if slot is None and limit - cursor >= duration:
+                slot = (day, cursor)
+            if slot is not None:
+                break
+        if slot is None:
+            continue
+        day, start_min = slot
+        end_min = start_min + duration
+        # 把已建议的槽位视为占用，避免后续任务再次命中同一时段，
+        # 否则多条建议会全部指向同一个空闲窗口。
+        busy.setdefault(day, []).append((start_min, end_min))
+        suggestions_payload.append(
+            {
+                "task_id": str(task.id),
+                "title": task.title,
+                "day_date": day.isoformat(),
+                "start_time": f"{start_min // 60:02d}:{start_min % 60:02d}",
+                "end_time": f"{end_min // 60:02d}:{end_min % 60:02d}",
+                "duration_minutes": duration,
+            }
+        )
+        if len(suggestions_payload) >= 3:
+            break
+    return Response({"suggestions": suggestions_payload})

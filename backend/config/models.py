@@ -26,3 +26,20 @@ class VersionedModel(models.Model):
 
     def restore(self) -> None:
         self.deleted_at = None
+
+    def bump_version(self) -> int:
+        """Persist an optimistic-lock version increment and refresh this instance.
+
+        Business rules that change several fields in one transaction should
+        still use explicit ``update(version=version + 1, ...)`` statements when
+        the previous version must be checked atomically. This helper is for
+        owner-scoped actions where a stale write cannot cross accounts, such as
+        syncing ``Task.scheduled_date`` from a calendar block.
+        """
+
+        type(self).objects.filter(pk=self.pk).update(
+            version=models.F("version") + 1,
+            updated_at=timezone.now(),
+        )
+        self.refresh_from_db(fields=["version", "updated_at"])
+        return self.version

@@ -28,9 +28,31 @@ const router = createRouter({
     },
     {
       path: "/projects",
-      name: "projects",
-      component: () => import("@/views/ProjectsView.vue"),
-      meta: { title: "项目", requiresAuth: true },
+      redirect: "/tasks",
+    },
+    {
+      path: "/calendar",
+      name: "calendar",
+      component: () => import("@/views/CalendarPlanView.vue"),
+      meta: { title: "日历与计划", requiresAuth: true },
+    },
+    {
+      path: "/focus",
+      name: "focus",
+      component: () => import("@/views/FocusStatsView.vue"),
+      meta: { title: "专注与统计", requiresAuth: true },
+    },
+    {
+      path: "/reviews",
+      name: "reviews",
+      component: () => import("@/views/SpacedRepetitionView.vue"),
+      meta: { title: "间隔复习", requiresAuth: true },
+    },
+    {
+      path: "/settings",
+      name: "settings",
+      component: () => import("@/views/WorkspaceConfigView.vue"),
+      meta: { title: "工作区配置", requiresAuth: true },
     },
     {
       path: "/journal",
@@ -87,6 +109,12 @@ const router = createRouter({
       meta: { title: "账号管理", requiresAuth: true },
     },
     {
+      path: "/about",
+      name: "about",
+      component: () => import("@/views/AboutView.vue"),
+      meta: { title: "关于" },
+    },
+    {
       path: "/:pathMatch(.*)*",
       redirect: "/",
     },
@@ -105,6 +133,11 @@ const guestBlockedPaths = [
   "/knowledge",
   "/knowledge/memories",
   "/chat",
+  "/calendar",
+  "/focus",
+  "/reviews",
+  "/settings",
+  "/accounts",
 ];
 
 router.beforeEach(async (to) => {
@@ -112,7 +145,7 @@ router.beforeEach(async (to) => {
   if (!auth.initialized) {
     await auth.initialize();
   }
-  document.title = `${String(to.meta.title || "zixxx")} · zixxx`;
+  document.title = `${String(to.meta.title || "缺页中断")} · 缺页中断`;
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     return {
       path: "/",

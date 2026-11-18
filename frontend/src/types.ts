@@ -275,6 +275,8 @@ export interface WorkspaceTask {
   status: TaskStatus;
   priority: TaskPriority;
   scheduled_date: string | null;
+  estimated_minutes: number;
+  is_scheduled: boolean;
   due_at: string | null;
   completed_at: string | null;
   position: number;
@@ -321,6 +323,103 @@ export interface PagedResult<T> {
   page_size: number;
   count: number;
   pages: number;
+}
+
+// ---------------------------------------------------------------------------
+// Calendar / focus / reviews
+// ---------------------------------------------------------------------------
+
+export type CalendarSubView = "week" | "month" | "list";
+
+export interface CalendarBlock {
+  id: string;
+  task_id: string | null;
+  title: string;
+  block_type: "task" | "study" | "habit";
+  day_date: string;
+  start_time: string;
+  end_time: string;
+  duration_minutes: number;
+  is_completed: boolean;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CalendarPayload {
+  week_start: string;
+  week_end: string;
+  blocks: CalendarBlock[];
+  unscheduled_tasks: WorkspaceTask[];
+  total_scheduled_minutes: number;
+}
+
+export interface CalendarMonthPayload {
+  month: string;
+  blocks: CalendarBlock[];
+  total_scheduled_minutes: number;
+}
+
+export interface CalendarPreviewSlot {
+  day_date: string;
+  start_time: string;
+  title: string;
+  duration_minutes: number;
+}
+
+export interface FocusLog {
+  id: string;
+  task_id: string | null;
+  target_title: string;
+  minutes: number;
+  created_at: string;
+}
+
+export interface FocusPayload {
+  week_start: string;
+  week_end: string;
+  weekly_total_minutes: number;
+  session_count: number;
+  top_direction: string;
+  daily_series: { day: string; date: string; mins: number }[];
+  recent_logs: FocusLog[];
+}
+
+export interface ReviewCard {
+  id: string;
+  front: string;
+  back: string;
+  tag: string;
+  document: string | null;
+  document_title: string;
+  interval_days: number;
+  ease_factor: number;
+  repetitions: number;
+  next_review_at: string;
+  last_reviewed_at: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ReviewGrade = "again" | "hard" | "good" | "easy";
+
+export interface WorkspaceSearchResults {
+  query: string;
+  tasks: { id: string; title: string; status: TaskStatus; project_name: string; route: string }[];
+  projects: { id: string; name: string; status: string; route: string }[];
+  notes: { id: string; title: string; snippet: string; route: string }[];
+  materials: { id: string; title: string; file_size: number; route: string }[];
+  memories: { id: string; summary: string; status: string; route: string }[];
+}
+
+export interface AgentSuggestion {
+  task_id: string;
+  title: string;
+  day_date: string;
+  start_time: string;
+  end_time: string;
+  duration_minutes: number;
 }
 
 // ---------------------------------------------------------------------------

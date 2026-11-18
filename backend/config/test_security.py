@@ -138,14 +138,20 @@ class ChatSocketTests(TransactionTestCase):
         tokens = [Token.objects.create(user=user).key for user in (qzx, sqx, guest)]
 
         async def exercise():
+            # The chat protocol requires a ?with=<username> query string since
+            # a991871; qzx may pick any partner, sqx may only chat with qzx.
             sockets = [
                 WebsocketCommunicator(
                     application,
-                    "/ws/chat/",
+                    path,
                     headers=[(b"origin", b"http://localhost:5173")],
                     subprotocols=["zixxx.chat", f"token.{token}"],
                 )
-                for token in tokens
+                for token, path in (
+                    (tokens[0], "/ws/chat/?with=sqx"),
+                    (tokens[1], "/ws/chat/?with=qzx"),
+                    (tokens[2], "/ws/chat/"),
+                )
             ]
             left, right, denied = sockets
             try:

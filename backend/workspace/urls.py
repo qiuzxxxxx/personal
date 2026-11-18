@@ -5,6 +5,24 @@ from . import library_views, views
 urlpatterns = [
     path("workspace/today/", views.today, name="workspace-today"),
     path("workspace/preferences/", views.preferences, name="workspace-preferences"),
+    path("workspace/calendar/", views.calendar_week, name="workspace-calendar"),
+    path(
+        "workspace/calendar/month/",
+        views.calendar_month,
+        name="workspace-calendar-month",
+    ),
+    path(
+        "workspace/calendar/blocks/",
+        views.calendar_block_list,
+        name="workspace-calendar-block-list",
+    ),
+    path(
+        "workspace/calendar/blocks/<uuid:block_id>/",
+        views.calendar_block_detail,
+        name="workspace-calendar-block-detail",
+    ),
+    path("workspace/focus/", views.focus_sessions, name="workspace-focus"),
+    path("workspace/search/", views.search_workspace, name="workspace-search"),
     path("tasks/", views.task_list, name="task-list"),
     path("tasks/reorder/", views.task_reorder, name="task-reorder"),
     path("tasks/<uuid:task_id>/", views.task_detail, name="task-detail"),

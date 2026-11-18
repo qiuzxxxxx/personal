@@ -1,11 +1,16 @@
 import api, { requestPath } from "./client";
 import type {
+  CalendarBlock,
+  CalendarMonthPayload,
+  CalendarPayload,
+  FocusPayload,
   PagedResult,
   TodayPayload,
   TaskPriority,
   TaskStatus,
   WorkspaceJournal,
   WorkspaceProject,
+  WorkspaceSearchResults,
   WorkspaceTask,
   WorkspaceTag,
 } from "@/types";
@@ -27,6 +32,7 @@ export interface TaskWritePayload {
   status?: TaskStatus;
   priority?: TaskPriority;
   scheduled_date?: string | null;
+  estimated_minutes?: number;
   due_at?: string | null;
   project?: string | null;
   tags?: string[];
@@ -280,6 +286,99 @@ export async function attachTaskMaterial(taskId: string, materialId: string): Pr
 
 export async function detachTaskMaterial(taskId: string, materialId: string): Promise<void> {
   await api.delete(`/tasks/${taskId}/materials/${materialId}/`);
+}
+
+export interface WorkspacePreference {
+  id: string;
+  timezone: string;
+  week_starts_on: number;
+  default_task_priority: TaskPriority;
+}
+
+export async function fetchPreferences(): Promise<WorkspacePreference> {
+  const { data } = await api.get<WorkspacePreference>("/workspace/preferences/");
+  return data;
+}
+
+export async function savePreferences(payload: {
+  timezone: string;
+  week_starts_on: number;
+  default_task_priority: TaskPriority;
+}): Promise<WorkspacePreference> {
+  const { data } = await api.patch<WorkspacePreference>("/workspace/preferences/", payload);
+  return data;
+}
+
+export async function fetchCalendar(weekStart?: string): Promise<CalendarPayload> {
+  const { data } = await api.get<CalendarPayload>("/workspace/calendar/", {
+    params: weekStart ? { week_start: weekStart } : undefined,
+  });
+  return data;
+}
+
+export async function fetchCalendarMonth(month: string): Promise<CalendarMonthPayload> {
+  const { data } = await api.get<CalendarMonthPayload>("/workspace/calendar/month/", {
+    params: { month },
+  });
+  return data;
+}
+
+export async function createCalendarBlock(payload: {
+  task_id?: string | null;
+  title?: string;
+  block_type?: "task" | "study" | "habit";
+  day_date: string;
+  start_time: string;
+  end_time?: string;
+  duration_minutes?: number;
+}): Promise<CalendarBlock> {
+  const { data } = await api.post<CalendarBlock>("/workspace/calendar/blocks/", payload);
+  return data;
+}
+
+export async function updateCalendarBlock(
+  id: string,
+  payload: {
+    title?: string;
+    block_type?: "task" | "study" | "habit";
+    day_date?: string;
+    start_time?: string;
+    end_time?: string;
+    duration_minutes?: number;
+    is_completed?: boolean;
+    version: number;
+  },
+): Promise<CalendarBlock> {
+  const { data } = await api.patch<CalendarBlock>(
+    `/workspace/calendar/blocks/${id}/`,
+    payload,
+  );
+  return data;
+}
+
+export async function deleteCalendarBlock(id: string): Promise<CalendarBlock> {
+  const { data } = await api.delete<CalendarBlock>(`/workspace/calendar/blocks/${id}/`);
+  return data;
+}
+
+export async function fetchFocusStats(): Promise<FocusPayload> {
+  const { data } = await api.get<FocusPayload>("/workspace/focus/");
+  return data;
+}
+
+export async function createFocusSession(payload: {
+  task_id?: string | null;
+  target_title: string;
+  minutes: number;
+}): Promise<void> {
+  await api.post("/workspace/focus/", payload);
+}
+
+export async function searchWorkspace(q: string): Promise<WorkspaceSearchResults> {
+  const { data } = await api.get<WorkspaceSearchResults>("/workspace/search/", {
+    params: { q },
+  });
+  return data;
 }
 
 export async function downloadMaterial(material: LibraryMaterial): Promise<void> {

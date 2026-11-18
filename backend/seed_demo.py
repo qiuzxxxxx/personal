@@ -69,9 +69,9 @@ def make_pdf() -> bytes:
         return b"%PDF-1.4\n% demo\n%%EOF"
     document = pymupdf.open()
     page = document.new_page()
-    page.insert_text((72, 92), "zixxx - Project Brief", fontsize=20)
+    page.insert_text((72, 92), "Page Fault - Project Brief", fontsize=20)
     page.insert_text((72, 130), "Self-hosted multimodal AI workspace", fontsize=11)
-    document.save("/tmp/zixxx_demo.pdf") if False else None
+    document.save("/tmp/queye_demo.pdf") if False else None
     data = document.tobytes()
     document.close()
     return data
@@ -126,7 +126,7 @@ def main() -> None:
         3,
     )
     add_transfer(
-        "zixxx-项目说明.pdf",
+        "缺页中断-项目说明.pdf",
         make_pdf(),
         "application/pdf",
         True,

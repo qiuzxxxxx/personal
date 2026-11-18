@@ -345,6 +345,14 @@ def receipt_content(request, receipt_id):
         return error("请选择要上传的文件。", 400, code="missing_file")
 
     now = timezone.now()
+    if receipt.state == "receiving" and receipt.lease_expires_at is not None:
+        # The previous attempt died mid-upload; once its lease has expired the
+        # receipt may be claimed again instead of staying stuck in receiving.
+        if receipt.lease_expires_at <= now:
+            UploadReceipt.objects.filter(
+                pk=receipt.pk, state="receiving", lease_expires_at=receipt.lease_expires_at
+            ).update(state="reserved", updated_at=now)
+            receipt.refresh_from_db()
     attempt_id = uuid.uuid4()
     claimed = UploadReceipt.objects.filter(pk=receipt.pk, state="reserved").update(
         state="receiving",
@@ -420,8 +428,16 @@ def receipt_content(request, receipt_id):
         source="qr",
         state="ready",
     )
-    material.storage_key.save(storage_name(suffix), upload, save=False)
-    material.size_bytes = material.storage_key.size
+    try:
+        material.storage_key.save(storage_name(suffix), upload, save=False)
+        material.size_bytes = material.storage_key.size
+    except OSError:
+        # A failed disk write must not leave the receipt stuck in receiving;
+        # revert it to reserved so the client can retry the upload.
+        UploadReceipt.objects.filter(pk=receipt.pk, attempt_id=attempt_id).update(
+            state="reserved", updated_at=timezone.now()
+        )
+        return error("文件写入存储失败，请重试。", 500, code="storage_failed")
     material.sha256 = digest
 
     try:

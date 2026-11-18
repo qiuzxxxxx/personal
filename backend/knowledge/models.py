@@ -12,6 +12,7 @@ import uuid
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 from config.models import VersionedModel
 
@@ -468,3 +469,37 @@ class OwnerContextState(models.Model):
 
     def __str__(self) -> str:  # pragma: no cover
         return f"context:{self.owner_id}@{self.epoch}"
+
+
+class ReviewCard(VersionedModel):
+    """SM-2 spaced-repetition card owned by one account."""
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="review_cards",
+    )
+    document = models.ForeignKey(
+        KnowledgeDocument,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="review_cards",
+    )
+    front = models.CharField(max_length=300)
+    back = models.TextField(max_length=10000)
+    tag = models.CharField(max_length=64, blank=True, default="408复习")
+    interval_days = models.PositiveIntegerField(default=1)
+    ease_factor = models.FloatField(default=2.5)
+    repetitions = models.PositiveIntegerField(default=0)
+    next_review_at = models.DateTimeField(db_index=True, default=timezone.now)
+    last_reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["next_review_at", "created_at"]
+        indexes = [
+            models.Index(fields=["owner", "deleted_at", "next_review_at"]),
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"review:{self.front[:24]}"

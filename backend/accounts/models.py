@@ -4,6 +4,36 @@ from django.db import models
 from .models_maintenance import AccountLock, SiteMaintenance  # noqa: F401
 
 
+class SiteAbout(models.Model):
+    """Singleton content of the public "about" page.
+
+    Every field is editable by the highest administrator; readers get the
+    page without authentication. Empty fields are simply hidden on the page.
+    """
+
+    site_name = models.CharField(max_length=100, blank=True, default="缺页中断")
+    tagline = models.CharField(max_length=200, blank=True, default="")
+    intro = models.TextField(max_length=5000, blank=True, default="")
+    features = models.TextField(max_length=5000, blank=True, default="")
+    developer = models.CharField(max_length=200, blank=True, default="")
+    contact = models.CharField(max_length=500, blank=True, default="")
+    app_version = models.CharField(max_length=100, blank=True, default="")
+    guide = models.TextField(max_length=5000, blank=True, default="")
+    links = models.JSONField(default=list, blank=True)
+    updated_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="site_about_updates"
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "关于页面"
+        verbose_name_plural = "关于页面"
+
+    @classmethod
+    def load(cls) -> "SiteAbout":
+        return cls.objects.get_or_create(pk=1)[0]
+
+
 class AccountProfile(models.Model):
     """Account-level access selected by the highest administrator."""
 

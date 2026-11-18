@@ -57,6 +57,11 @@ export async function deleteAccount(username: string): Promise<void> {
   await api.delete(`/auth/users/${encodeURIComponent(username)}/`);
 }
 
+export async function fetchMaintenance(): Promise<MaintenanceStatus> {
+  const { data } = await api.get<MaintenanceStatus>("/auth/maintenance/status/");
+  return data;
+}
+
 export async function updateMaintenance(payload: {
   enabled: boolean;
   reason: string;

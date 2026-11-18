@@ -6,8 +6,10 @@ never accepted from client payloads.
 from __future__ import annotations
 
 import uuid
+from datetime import date, datetime
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 
@@ -117,6 +119,7 @@ class Task(VersionedModel):
     status = models.CharField(max_length=16, choices=TASK_STATUS, default="todo")
     priority = models.CharField(max_length=16, choices=TASK_PRIORITY, default="normal")
     scheduled_date = models.DateField(null=True, blank=True)
+    estimated_minutes = models.PositiveIntegerField(default=45)
     due_at = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
     position = models.IntegerField(default=0)
@@ -141,6 +144,95 @@ class Task(VersionedModel):
 
     def __str__(self) -> str:  # pragma: no cover
         return self.title
+
+
+class CalendarBlock(VersionedModel):
+    """A single-day scheduled time block on the personal timeline."""
+
+    BLOCK_TYPES = [
+        ("task", "任务排期"),
+        ("study", "学习复习"),
+        ("habit", "每日例行"),
+    ]
+    ORIGIN_CHOICES = [
+        ("manual", "手动创建"),
+        ("backfill", "历史回填"),
+    ]
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="calendar_blocks",
+    )
+    task = models.ForeignKey(
+        Task,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="calendar_blocks",
+    )
+    title = models.CharField(max_length=200)
+    block_type = models.CharField(max_length=16, choices=BLOCK_TYPES, default="task")
+    origin = models.CharField(max_length=16, choices=ORIGIN_CHOICES, default="manual")
+    day_date = models.DateField(db_index=True)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    duration_minutes = models.PositiveIntegerField(default=60)
+    is_completed = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["day_date", "start_time", "created_at"]
+        indexes = [
+            models.Index(fields=["owner", "deleted_at", "day_date"]),
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"{self.day_date} {self.start_time:%H:%M} {self.title}"
+
+    def clean(self) -> None:
+        super().clean()
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValidationError(
+                {"end_time": "结束时间必须晚于开始时间（不支持跨日时间块）。"}
+            )
+
+    def save(self, *args, **kwargs):
+        if self.start_time and self.end_time and self.end_time > self.start_time:
+            started = datetime.combine(date.min, self.start_time)
+            ended = datetime.combine(date.min, self.end_time)
+            self.duration_minutes = max(
+                1, int((ended - started).total_seconds() // 60)
+            )
+        super().save(*args, **kwargs)
+
+
+class FocusSession(models.Model):
+    """Append-only focus log used for weekly statistics."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="focus_sessions",
+    )
+    task = models.ForeignKey(
+        Task,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="focus_sessions",
+    )
+    target_title = models.CharField(max_length=200)
+    minutes = models.PositiveIntegerField(default=25)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["owner", "created_at"]),
+        ]
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"focus:{self.owner_id}:{self.minutes}m"
 
 
 class Folder(VersionedModel):

@@ -6,6 +6,8 @@ const COLLAPSE_KEY = "nexus.sidebar.collapsed";
 export const useUiStore = defineStore("ui", () => {
   const sidebarCollapsed = ref(localStorage.getItem(COLLAPSE_KEY) === "1");
   const sidebarOpen = ref(false);
+  const copilotOpen = ref(window.innerWidth >= 1280);
+  const commandPaletteOpen = ref(false);
 
   function toggleSidebar(): void {
     sidebarCollapsed.value = !sidebarCollapsed.value;
@@ -20,11 +22,28 @@ export const useUiStore = defineStore("ui", () => {
     sidebarOpen.value = false;
   }
 
+  function toggleCopilot(): void {
+    copilotOpen.value = !copilotOpen.value;
+  }
+
+  function openCommandPalette(): void {
+    commandPaletteOpen.value = true;
+  }
+
+  function closeCommandPalette(): void {
+    commandPaletteOpen.value = false;
+  }
+
   return {
     sidebarCollapsed,
     sidebarOpen,
+    copilotOpen,
+    commandPaletteOpen,
     toggleSidebar,
     openMobileSidebar,
     closeMobileSidebar,
+    toggleCopilot,
+    openCommandPalette,
+    closeCommandPalette,
   };
 });

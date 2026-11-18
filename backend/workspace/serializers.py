@@ -13,7 +13,9 @@ from .models import (
     PROJECT_STATUS,
     TASK_PRIORITY,
     TASK_STATUS,
+    CalendarBlock,
     DailyEntry,
+    FocusSession,
     Folder,
     Material,
     Project,
@@ -59,6 +61,7 @@ class TaskSerializer(serializers.ModelSerializer):
     tags = TagSerializer(many=True, read_only=True)
     project_name = serializers.SerializerMethodField()
     project_deleted = serializers.SerializerMethodField()
+    is_scheduled = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -69,6 +72,8 @@ class TaskSerializer(serializers.ModelSerializer):
             "status",
             "priority",
             "scheduled_date",
+            "estimated_minutes",
+            "is_scheduled",
             "due_at",
             "completed_at",
             "position",
@@ -86,6 +91,9 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def get_project_deleted(self, obj: Task) -> bool:
         return bool(obj.project_id and obj.project.deleted_at)
+
+    def get_is_scheduled(self, obj: Task) -> bool:
+        return obj.scheduled_date is not None
 
 
 class DailyEntrySerializer(serializers.ModelSerializer):
@@ -184,6 +192,9 @@ class TaskWriteSerializer(serializers.Serializer):
         choices=PRIORITY_CHOICES, required=False, default="normal"
     )
     scheduled_date = serializers.DateField(required=False, allow_null=True, default=None)
+    estimated_minutes = serializers.IntegerField(
+        required=False, min_value=1, max_value=720, default=45
+    )
     due_at = serializers.DateTimeField(required=False, allow_null=True, default=None)
     project = serializers.UUIDField(required=False, allow_null=True, default=None)
     tags = serializers.ListField(
@@ -208,6 +219,9 @@ class TaskPatchSerializer(TaskWriteSerializer):
     priority = serializers.ChoiceField(choices=PRIORITY_CHOICES, required=False)
     description = serializers.CharField(max_length=20000, required=False, allow_blank=True)
     scheduled_date = serializers.DateField(required=False, allow_null=True)
+    estimated_minutes = serializers.IntegerField(
+        required=False, min_value=1, max_value=720
+    )
     due_at = serializers.DateTimeField(required=False, allow_null=True)
     project = serializers.UUIDField(required=False, allow_null=True)
     tags = serializers.ListField(child=serializers.UUIDField(), required=False)
@@ -258,3 +272,82 @@ class DailyEntryWriteSerializer(serializers.Serializer):
         max_length=50000, required=False, allow_blank=True, default=""
     )
     version = serializers.IntegerField(required=False, min_value=1)
+
+
+class CalendarBlockSerializer(serializers.ModelSerializer):
+    task_id = serializers.SerializerMethodField()
+    start_time = serializers.TimeField(format="%H:%M")
+    end_time = serializers.TimeField(format="%H:%M")
+
+    class Meta:
+        model = CalendarBlock
+        fields = [
+            "id",
+            "task_id",
+            "title",
+            "block_type",
+            "day_date",
+            "start_time",
+            "end_time",
+            "duration_minutes",
+            "is_completed",
+            "version",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_task_id(self, obj: CalendarBlock) -> str | None:
+        return str(obj.task_id) if obj.task_id else None
+
+
+class CalendarBlockWriteSerializer(serializers.Serializer):
+    task_id = serializers.UUIDField(required=False, allow_null=True)
+    title = serializers.CharField(
+        max_length=200, required=False, allow_blank=True, default=""
+    )
+    block_type = serializers.ChoiceField(
+        choices=[choice[0] for choice in CalendarBlock.BLOCK_TYPES],
+        required=False,
+        default="task",
+    )
+    day_date = serializers.DateField()
+    start_time = serializers.TimeField()
+    end_time = serializers.TimeField(required=False, allow_null=True)
+    duration_minutes = serializers.IntegerField(
+        required=False, min_value=5, max_value=720
+    )
+    is_completed = serializers.BooleanField(required=False, default=False)
+
+
+class CalendarBlockPatchSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=200, required=False, allow_blank=False)
+    block_type = serializers.ChoiceField(
+        choices=[choice[0] for choice in CalendarBlock.BLOCK_TYPES], required=False
+    )
+    day_date = serializers.DateField(required=False)
+    start_time = serializers.TimeField(required=False)
+    end_time = serializers.TimeField(required=False)
+    duration_minutes = serializers.IntegerField(
+        required=False, min_value=5, max_value=720
+    )
+    is_completed = serializers.BooleanField(required=False)
+    version = serializers.IntegerField(required=False, min_value=1)
+
+
+class FocusSessionSerializer(serializers.ModelSerializer):
+    task_id = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FocusSession
+        fields = ["id", "task_id", "target_title", "minutes", "created_at"]
+
+    def get_task_id(self, obj: FocusSession) -> str | None:
+        return str(obj.task_id) if obj.task_id else None
+
+
+class FocusSessionWriteSerializer(serializers.Serializer):
+    task_id = serializers.UUIDField(required=False, allow_null=True)
+    target_title = serializers.CharField(
+        max_length=200, allow_blank=False, trim_whitespace=True
+    )
+    minutes = serializers.IntegerField(min_value=1, max_value=480)

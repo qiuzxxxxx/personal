@@ -21,7 +21,7 @@ const emit = defineEmits<{
 <template>
   <ModalShell
     :open="open"
-    :title="scope === 'transfer' ? '文件中转站使用声明' : 'zixxx 使用声明'"
+    :title="scope === 'transfer' ? '文件中转站使用声明' : '缺页中断 使用声明'"
     :subtitle="`版本 v${TERMS_VERSION} · 含法条引用、禁止信息与注意事项`"
     max-width="max-w-2xl"
     @close="emit('close')"

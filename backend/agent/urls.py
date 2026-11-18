@@ -4,6 +4,7 @@ from . import views
 
 urlpatterns = [
     path("config/", views.api_config_view, name="agent-config"),
+    path("suggestions/", views.suggestions, name="agent-suggestions"),
     path("config/test/", views.test_connection, name="agent-config-test"),
     path("conversations/", views.conversations, name="agent-conversations"),
     path(

@@ -63,6 +63,12 @@ urlpatterns = [
         views.memory_forget,
         name="knowledge-memory-forget",
     ),
+    path("knowledge/reviews/", views.review_list, name="knowledge-review-list"),
+    path(
+        "knowledge/reviews/<uuid:card_id>/grade/",
+        views.review_grade,
+        name="knowledge-review-grade",
+    ),
     path("knowledge/write-intents/", views.write_intent, name="knowledge-write-intent"),
     path("knowledge/citations/<uuid:citation_id>/", views.citation_detail, name="knowledge-citation"),
     path("knowledge/export/", views.export_view, name="knowledge-export"),

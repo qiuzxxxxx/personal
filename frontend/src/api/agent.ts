@@ -2,6 +2,7 @@ import api, { apiUrl, bearerHeaders } from "./client";
 import type {
   AgentAttachmentUpload,
   AgentStreamEvent,
+  AgentSuggestion,
   ApiConfig,
   ApiConfigState,
   ConversationDetail,
@@ -48,6 +49,11 @@ export async function getConversation(id: string): Promise<ConversationDetail> {
 
 export async function deleteConversation(id: string): Promise<void> {
   await api.delete(`/agent/conversations/${id}/`);
+}
+
+export async function fetchAgentSuggestions(): Promise<AgentSuggestion[]> {
+  const { data } = await api.get<{ suggestions: AgentSuggestion[] }>("/agent/suggestions/");
+  return data.suggestions;
 }
 
 export async function uploadAgentAttachment(file: File): Promise<AgentAttachmentUpload> {

@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import * as workspaceApi from "@/api/workspace";
 import type { TaskListQuery, TaskWritePayload } from "@/api/workspace";
 import { useAuthStore } from "@/stores/auth";
@@ -35,6 +35,10 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   const journal = ref<WorkspaceJournal | null>(null);
   const loading = ref(false);
   const saving = ref(false);
+
+  const openTasks = computed(() =>
+    tasks.value.filter((task) => task.is_scheduled === false && task.status !== "done"),
+  );
 
   let ownerId: number | null = null;
   let sessionEpoch = 0;
@@ -226,6 +230,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     taskPages,
     projects,
     tags,
+    openTasks,
     journal,
     loading,
     saving,

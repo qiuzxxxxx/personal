@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onActivated, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   ArrowDown,
@@ -11,6 +11,7 @@ import {
   QrCode,
   RotateCcw,
   Search,
+  StickyNote,
   Trash2,
   X,
 } from "lucide-vue-next";
@@ -39,6 +40,7 @@ const editDescription = ref("");
 const editStatus = ref<TaskStatus>("todo");
 const editPriority = ref<TaskPriority>("normal");
 const editDate = ref("");
+const editEstimated = ref(45);
 const editDue = ref("");
 const editProject = ref("");
 const editTags = ref<string[]>([]);
@@ -46,6 +48,8 @@ const taskMaterials = ref<LibraryMaterial[]>([]);
 const attachmentsLoading = ref(false);
 const showTaskPhoneUpload = ref(false);
 const busy = ref(false);
+const draftNote = ref("");
+const noteExpanded = ref(false);
 const page = ref(1);
 
 const statusOptions: { value: Filter; label: string }[] = [
@@ -85,9 +89,11 @@ async function addTask(): Promise<void> {
   try {
     await store.addTask({
       title,
+      description: draftNote.value.trim(),
       client_request_id: newClientRequestId(),
     });
     draft.value = "";
+    draftNote.value = "";
     await refresh();
   } catch (error) {
     toast.error(extractApiError(error));
@@ -103,6 +109,7 @@ async function startEdit(task: WorkspaceTask): Promise<void> {
   editStatus.value = task.status;
   editPriority.value = task.priority;
   editDate.value = task.scheduled_date || "";
+  editEstimated.value = task.estimated_minutes || 45;
   editDue.value = task.due_at
     ? new Date(new Date(task.due_at).getTime() - new Date(task.due_at).getTimezoneOffset() * 60000)
         .toISOString()
@@ -138,6 +145,7 @@ async function saveEdit(task: WorkspaceTask): Promise<void> {
       status: editStatus.value,
       priority: editPriority.value,
       scheduled_date: editDate.value || null,
+      estimated_minutes: Math.max(1, Math.min(720, editEstimated.value || 45)),
       due_at: editDue.value ? new Date(editDue.value).toISOString() : null,
       project: editProject.value || null,
       tags: editTags.value,
@@ -228,6 +236,13 @@ onMounted(async () => {
     if (found) startEdit(found);
   }
 });
+
+// KeepAlive 缓存页：重新进入时必须重拉列表。日历拖拽排期或 AI 助手确认安排
+// 会在后端递增任务 version（sync_task_schedule），不刷新就会一直 409
+// “任务已被其他设备修改”，表现为按钮点了没反应。
+onActivated(() => {
+  if (store.tasks.length) void refresh();
+});
 </script>
 
 <template>
@@ -247,24 +262,43 @@ onMounted(async () => {
       </header>
 
       <form
-        class="mt-6 flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-soft"
+        class="mt-6 flex flex-col gap-1 rounded-2xl border border-slate-200 bg-white p-2 shadow-soft"
         @submit.prevent="addTask"
       >
-        <input
-          v-model="draft"
-          type="text"
-          maxlength="200"
-          placeholder="新建任务标题"
-          class="min-w-0 flex-1 bg-transparent px-2.5 py-2 text-[14px] text-ink-900 outline-none placeholder:text-ink-300"
+        <div class="flex items-center gap-2">
+          <input
+            v-model="draft"
+            type="text"
+            maxlength="200"
+            placeholder="新建任务标题"
+            class="min-w-0 flex-1 bg-transparent px-2.5 py-2 text-[14px] text-ink-900 outline-none placeholder:text-ink-300"
+          />
+          <button
+            type="button"
+            class="icon-button h-10 w-10 !min-h-0 !min-w-0 text-ink-400 transition hover:text-ink-700"
+            :title="noteExpanded ? '收起备注' : '添加备注'"
+            :aria-label="noteExpanded ? '收起备注' : '添加备注'"
+            @click="noteExpanded = !noteExpanded"
+          >
+            <StickyNote :size="16" />
+          </button>
+          <button
+            type="submit"
+            :disabled="busy || !draft.trim()"
+            class="inline-flex h-10 items-center gap-1.5 rounded-xl bg-ink-900 px-4 text-[13px] font-medium text-white transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Plus :size="15" />
+            新建
+          </button>
+        </div>
+        <textarea
+          v-if="noteExpanded || draftNote.trim()"
+          v-model="draftNote"
+          rows="2"
+          maxlength="2000"
+          placeholder="备注（可选）：补充细节、链接或提醒事项，创建后可在编辑中继续修改"
+          class="w-full resize-y rounded-xl bg-slate-50 px-3 py-2 text-[13px] leading-6 text-ink-800 outline-none transition placeholder:text-ink-300 focus:bg-slate-100"
         />
-        <button
-          type="submit"
-          :disabled="busy || !draft.trim()"
-          class="inline-flex h-10 items-center gap-1.5 rounded-xl bg-ink-900 px-4 text-[13px] font-medium text-white transition hover:bg-ink-800 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Plus :size="15" />
-          新建
-        </button>
       </form>
 
       <div class="mt-5 flex flex-wrap items-center gap-2">
@@ -353,7 +387,15 @@ onMounted(async () => {
                 <span v-if="task.priority !== 'normal'">
                   {{ task.priority === "high" ? "高优先级" : "低优先级" }}
                 </span>
+                <span>预计 {{ task.estimated_minutes }} 分钟</span>
                 <span v-for="tag in task.tags" :key="tag.id">#{{ tag.name }}</span>
+              </p>
+              <p
+                v-if="task.description"
+                class="mt-1.5 flex items-start gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[12px] leading-5 text-ink-600"
+              >
+                <StickyNote :size="13" class="mt-0.5 shrink-0 text-ink-300" />
+                <span class="line-clamp-2 whitespace-pre-wrap break-words">{{ task.description }}</span>
               </p>
             </div>
 
@@ -442,6 +484,15 @@ onMounted(async () => {
                 type="date"
                 aria-label="计划日期"
                 class="rounded-lg border border-slate-200 px-2 py-1.5 text-[12px] outline-none"
+              />
+              <input
+                v-model.number="editEstimated"
+                type="number"
+                min="1"
+                max="720"
+                aria-label="预计分钟"
+                title="预计分钟"
+                class="w-20 rounded-lg border border-slate-200 px-2 py-1.5 text-[12px] outline-none"
               />
               <input
                 v-model="editDue"

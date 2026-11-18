@@ -8,6 +8,7 @@ from .models import (
     KnowledgeDocument,
     KnowledgeRevision,
     PersonalMemory,
+    ReviewCard,
 )
 
 
@@ -199,3 +200,42 @@ class MemoryPatchSerializer(serializers.Serializer):
     scope_type = serializers.ChoiceField(choices=["global", "project"], required=False)
     project = serializers.UUIDField(required=False, allow_null=True)
     version = serializers.IntegerField(min_value=1)
+
+
+class ReviewCardSerializer(serializers.ModelSerializer):
+    document_title = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ReviewCard
+        fields = [
+            "id",
+            "front",
+            "back",
+            "tag",
+            "document",
+            "document_title",
+            "interval_days",
+            "ease_factor",
+            "repetitions",
+            "next_review_at",
+            "last_reviewed_at",
+            "version",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_document_title(self, obj: ReviewCard) -> str:
+        return obj.document.title if obj.document_id else ""
+
+
+class ReviewCardWriteSerializer(serializers.Serializer):
+    front = serializers.CharField(
+        max_length=300, allow_blank=False, trim_whitespace=True
+    )
+    back = serializers.CharField(
+        max_length=10000, allow_blank=False, trim_whitespace=True
+    )
+    tag = serializers.CharField(
+        max_length=64, required=False, allow_blank=True, default="408复习"
+    )
+    document = serializers.UUIDField(required=False, allow_null=True)

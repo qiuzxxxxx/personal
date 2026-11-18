@@ -19,8 +19,11 @@ import {
   HardDriveUpload,
   LogIn,
   BookPlus,
+  History,
+  Trash2,
 } from "lucide-vue-next";
 import BrandMark from "@/components/BrandMark.vue";
+import ModalShell from "@/components/ModalShell.vue";
 import MarkdownRenderer from "@/components/MarkdownRenderer.vue";
 import MultimodalInput from "@/components/MultimodalInput.vue";
 import ApiConfigModal from "@/components/ApiConfigModal.vue";
@@ -36,7 +39,7 @@ import { extractApiError } from "@/api/client";
 import { copyText } from "@/lib/markdown";
 import { formatTime } from "@/lib/format";
 import { providerLabel } from "@/lib/providers";
-import type { AgentMessage, AgentStreamEvent, KnowledgeScope, KnowledgeSourceRef } from "@/types";
+import type { AgentMessage, AgentStreamEvent, ConversationSummary, KnowledgeScope, KnowledgeSourceRef } from "@/types";
 
 interface Suggestion {
   icon: Component;
@@ -268,6 +271,48 @@ function startNew(): void {
   agent.startNew();
   router.push({ name: "agent" });
   nextTick(() => composerRef.value?.focus());
+}
+
+// ---- 会话历史（恢复旧侧栏的会话列表与删除能力） ----
+const historyOpen = ref(false);
+const pendingDelete = ref<ConversationSummary | null>(null);
+const deletingConversation = ref(false);
+
+async function openHistory(): Promise<void> {
+  historyOpen.value = true;
+  try {
+    await agent.loadConversations(true);
+  } catch (error) {
+    toast.error(extractApiError(error));
+  }
+}
+
+async function openConversation(id: string): Promise<void> {
+  if (sending.value) cancelStream();
+  try {
+    await agent.loadConversation(id);
+    historyOpen.value = false;
+    if (route.query.c !== id) {
+      await router.replace({ name: "agent", query: { c: id } });
+    }
+  } catch (error) {
+    toast.error(extractApiError(error));
+  }
+}
+
+async function confirmRemoveConversation(): Promise<void> {
+  const target = pendingDelete.value;
+  if (!target || deletingConversation.value) return;
+  deletingConversation.value = true;
+  try {
+    await agent.removeConversation(target.id);
+    pendingDelete.value = null;
+    toast.success("会话已删除");
+  } catch (error) {
+    toast.error(extractApiError(error));
+  } finally {
+    deletingConversation.value = false;
+  }
 }
 
 function handleStreamEvent(event: AgentStreamEvent, assistant: AgentMessage, user: AgentMessage): void {
@@ -520,7 +565,7 @@ function formatMessageTime(value: string): string {
           <Sparkles :size="11" />
         </span>
         <p class="hidden text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400 sm:block">
-          zixxx
+          缺页中断
         </p>
         <span class="hidden h-3 w-px bg-slate-200 sm:block" />
         <p class="truncate text-[12.5px] font-medium text-ink-600">{{ pageTitle }}</p>
@@ -549,6 +594,14 @@ function formatMessageTime(value: string): string {
           @click="openSettings"
         >
           <Settings2 :size="17" />
+        </button>
+        <button
+          type="button"
+          class="icon-button h-9 w-9 bg-white/60 backdrop-blur"
+          title="历史会话"
+          @click="openHistory"
+        >
+          <History :size="17" />
         </button>
         <button
           type="button"
@@ -592,7 +645,7 @@ function formatMessageTime(value: string): string {
               今天想一起完成什么？
             </h1>
             <p class="mt-4 max-w-[520px] text-[13.5px] leading-6 text-ink-500 sm:text-[14px]">
-              阅读文档、理解图片，或者把一个模糊的想法变成清晰的答案。zixxx 会陪你把问题想透。
+              阅读文档、理解图片，或者把一个模糊的想法变成清晰的答案。缺页中断 会陪你把问题想透。
             </p>
           </div>
 
@@ -639,7 +692,7 @@ function formatMessageTime(value: string): string {
                 <BrandMark :size="30" class="mt-0.5" />
                 <div class="min-w-0 flex-1">
                   <div class="mb-2 flex items-center gap-2">
-                    <p class="text-[12px] font-semibold text-ink-800">zixxx</p>
+                    <p class="text-[12px] font-semibold text-ink-800">缺页中断</p>
                     <span class="rounded-md bg-slate-100 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-ink-400">AI</span>
                     <span v-if="message.streaming" class="flex items-center gap-1 text-[10px] font-medium text-accent-500">
                       <span class="thinking-dot" />
@@ -784,12 +837,81 @@ function formatMessageTime(value: string): string {
           @open-settings="openSettings"
         />
         <p class="mt-2.5 text-center text-[9.5px] leading-4 text-ink-300">
-          zixxx 可能会犯错，请核查重要信息 · 内容将发送至你配置的模型接口
+          缺页中断 可能会犯错，请核查重要信息 · 内容将发送至你配置的模型接口
         </p>
       </div>
     </div>
     </template>
 
     <ApiConfigModal :open="configOpen" @close="configOpen = false" />
+
+    <ModalShell
+      :open="historyOpen"
+      title="历史会话"
+      subtitle="点击会话继续对话，或删除不再需要的记录"
+      max-width="max-w-lg"
+      @close="historyOpen = false"
+    >
+      <div v-if="agent.recentConversations.length === 0" class="py-8 text-center text-sm text-slate-500">
+        还没有历史会话
+      </div>
+      <ul v-else class="flex max-h-[46vh] flex-col gap-1.5 overflow-y-auto pr-1">
+        <li
+          v-for="conversation in agent.recentConversations"
+          :key="conversation.id"
+          class="group flex items-center gap-2 rounded-xl border border-transparent px-3 py-2.5 transition hover:border-slate-200 hover:bg-slate-50"
+        >
+          <button
+            type="button"
+            class="min-w-0 flex-1 text-left"
+            @click="openConversation(conversation.id)"
+          >
+            <p class="truncate text-sm font-medium text-slate-800">
+              {{ conversation.title || "未命名会话" }}
+            </p>
+            <p class="mt-0.5 text-xs text-slate-400">
+              {{ formatTime(conversation.updated_at) }}
+            </p>
+          </button>
+          <button
+            type="button"
+            class="icon-button h-8 w-8 !min-h-0 !min-w-0 text-slate-400 opacity-0 transition group-hover:opacity-100 hover:text-red-600"
+            title="删除会话"
+            aria-label="删除会话"
+            @click="pendingDelete = conversation"
+          >
+            <Trash2 :size="15" />
+          </button>
+        </li>
+      </ul>
+      <template #footer>
+        <button type="button" class="btn-secondary" @click="historyOpen = false">关闭</button>
+      </template>
+    </ModalShell>
+
+    <ModalShell
+      :open="pendingDelete !== null"
+      title="删除会话"
+      max-width="max-w-sm"
+      @close="pendingDelete = null"
+    >
+      <p class="text-sm leading-6 text-slate-600">
+        确定删除「{{ pendingDelete?.title || "未命名会话" }}」吗？删除后该会话与消息将不可恢复。
+      </p>
+      <template #footer>
+        <button type="button" class="btn-secondary" :disabled="deletingConversation" @click="pendingDelete = null">
+          取消
+        </button>
+        <button
+          type="button"
+          class="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-60"
+          :disabled="deletingConversation"
+          @click="confirmRemoveConversation"
+        >
+          <Loader2 v-if="deletingConversation" :size="15" class="animate-spin" />
+          删除
+        </button>
+      </template>
+    </ModalShell>
   </div>
 </template>

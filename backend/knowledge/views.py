@@ -5,6 +5,8 @@ clients can never choose it, and a guest account (yk) has no access.
 """
 from __future__ import annotations
 
+from datetime import timedelta
+
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, F, Q
@@ -42,6 +44,7 @@ from .models import (
     KnowledgeWriteIntent,
     MessageCitation,
     PersonalMemory,
+    ReviewCard,
 )
 from .search import search
 from .serializers import (
@@ -54,6 +57,8 @@ from .serializers import (
     MemoryPatchSerializer,
     MemorySerializer,
     MemoryWriteSerializer,
+    ReviewCardSerializer,
+    ReviewCardWriteSerializer,
 )
 
 
@@ -832,3 +837,119 @@ def export_view(request):
         "memories": export_memories(request.user),
     }
     return no_store(Response(payload))
+
+
+# --------------------------------------------------------------------------- #
+# spaced repetition (SM-2)
+# --------------------------------------------------------------------------- #
+def review_queryset(user):
+    return ReviewCard.objects.filter(owner=user, deleted_at__isnull=True)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([CanUseAgent])
+def review_list(request):
+    if request.method == "GET":
+        cards = (
+            review_queryset(request.user)
+            .filter(next_review_at__lte=timezone.now())
+            .select_related("document")
+            .order_by("next_review_at", "created_at")[:50]
+        )
+        return no_store(Response(ReviewCardSerializer(cards, many=True).data))
+
+    serializer = ReviewCardWriteSerializer(
+        data=request.data if isinstance(request.data, dict) else {}
+    )
+    if not serializer.is_valid():
+        return serializer_error(serializer)
+    data = serializer.validated_data
+    document = None
+    if data.get("document"):
+        document = KnowledgeDocument.objects.filter(
+            pk=data["document"], owner=request.user, deleted_at__isnull=True
+        ).first()
+        if document is None:
+            return error("知识文档不存在或不属于当前账号。", 400, code="invalid_reference")
+    card = ReviewCard.objects.create(
+        owner=request.user,
+        document=document,
+        front=data["front"],
+        back=data["back"],
+        tag=data.get("tag") or "408复习",
+        next_review_at=timezone.now(),
+    )
+    return Response(ReviewCardSerializer(card).data, status=201)
+
+
+@api_view(["POST"])
+@permission_classes([CanUseAgent])
+def review_grade(request, card_id):
+    card = review_queryset(request.user).select_related("document").filter(pk=card_id).first()
+    if card is None:
+        return error("复习卡不存在。", 404, code="not_found")
+
+    payload = request.data if isinstance(request.data, dict) else {}
+    grade = str(payload.get("grade") or "").strip()
+    if grade not in {"again", "hard", "good", "easy"}:
+        return error("grade 必须是 again / hard / good / easy。", 400, code="invalid_payload")
+
+    version = payload.get("version")
+    if version is not None:
+        try:
+            version = int(version)
+        except (TypeError, ValueError):
+            return error("version 必须是整数。", 400, code="invalid_payload")
+        if version != card.version:
+            return error(
+                "复习卡已被其他设备修改，请刷新后重试。",
+                409,
+                code="version_conflict",
+                current_version=card.version,
+            )
+
+    now = timezone.now()
+    ease = card.ease_factor
+    interval = card.interval_days
+    repetitions = card.repetitions
+
+    if grade == "again":
+        repetitions = 0
+        interval = 0
+        ease = max(1.3, ease - 0.2)
+        next_review_at = now + timedelta(minutes=10)
+    elif grade == "hard":
+        interval = max(1, round(interval * 1.2))
+        ease = max(1.3, ease - 0.15)
+        next_review_at = now + timedelta(days=interval)
+    elif grade == "good":
+        interval = 1 if repetitions == 0 else (3 if repetitions == 1 else round(interval * ease))
+        repetitions += 1
+        next_review_at = now + timedelta(days=max(1, interval))
+    else:
+        interval = max(4, round(interval * ease * 1.3))
+        repetitions += 1
+        ease += 0.15
+        next_review_at = now + timedelta(days=interval)
+
+    updated = ReviewCard.objects.filter(
+        pk=card.pk, owner=request.user, version=card.version, deleted_at__isnull=True
+    ).update(
+        interval_days=max(0, interval),
+        ease_factor=ease,
+        repetitions=repetitions,
+        next_review_at=next_review_at,
+        last_reviewed_at=now,
+        version=card.version + 1,
+        updated_at=now,
+    )
+    if not updated:
+        current = review_queryset(request.user).filter(pk=card.pk).first()
+        return error(
+            "复习卡已被其他设备修改，请刷新后重试。",
+            409,
+            code="version_conflict",
+            current_version=current.version if current else None,
+        )
+    card.refresh_from_db()
+    return Response(ReviewCardSerializer(card).data)
