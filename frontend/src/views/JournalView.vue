@@ -211,19 +211,19 @@ onUnmounted(() => {
 
 <template>
   <div class="h-full overflow-y-auto bg-canvas">
-    <div class="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 lg:py-10">
+    <div class="mx-auto w-full max-w-3xl px-3 py-5 sm:px-6 sm:py-6 lg:py-10">
       <header class="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 class="text-[26px] font-semibold tracking-tight text-ink-900">每日记录</h1>
+        <div class="min-w-0">
+          <h1 class="text-[22px] font-semibold tracking-tight text-ink-900 sm:text-[26px]">每日记录</h1>
           <p class="mt-1 text-[12.5px] text-ink-400">
             记录当天的安排、进展与想法，内容按日期保存。
           </p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
           <input
             v-model="day"
             type="date"
-            class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12.5px] text-ink-700 outline-none focus:border-accent-300"
+            class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12.5px] text-ink-700 outline-none focus:border-accent-300 sm:w-auto"
           />
           <button
             type="button"
@@ -253,7 +253,7 @@ onUnmounted(() => {
         </div>
       </header>
 
-      <p class="mt-3 text-[11.5px] text-ink-400" :class="{ 'text-rose-500': saveState === 'failed' }">
+      <p class="mt-3 break-words text-[11.5px] text-ink-400" :class="{ 'text-rose-500': saveState === 'failed' }">
         {{ saveLabel }}<span v-if="lastError"> · {{ lastError }}</span>
       </p>
 

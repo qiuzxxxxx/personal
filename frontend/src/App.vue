@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, watch } from "vue";
 import { useRoute } from "vue-router";
 import Sidebar from "@/components/Sidebar.vue";
@@ -79,9 +79,10 @@ watch(
 </script>
 
 <template>
-  <div v-if="isWorkbench" class="flex h-screen flex-col overflow-hidden bg-[#f4f7fb]">
-    <TopHeader />
-    <div class="relative flex min-h-0 flex-1 overflow-hidden">
+  <div v-if="isWorkbench" class="relative flex h-screen flex-col overflow-hidden bg-[#f6f8fc]">
+    <div class="gemini-global-aura" aria-hidden="true" />
+    <TopHeader class="relative z-20" />
+    <div class="relative z-10 flex min-h-0 flex-1 overflow-hidden">
       <Sidebar />
       <div class="flex min-w-0 flex-1 flex-col">
         <main class="min-h-0 flex-1 overflow-y-auto">
@@ -93,6 +94,13 @@ watch(
         </main>
         <FocusTimerBar />
       </div>
+      <!-- 手机端 Copilot 为覆盖层：补一层遮罩，点击即收起 -->
+      <div
+        v-if="ui.copilotOpen"
+        class="fixed inset-0 z-20 bg-black/20 backdrop-blur-[3px] lg:hidden"
+        aria-hidden="true"
+        @click="ui.toggleCopilot()"
+      />
       <AiCopilotDrawer
         v-show="ui.copilotOpen"
         class="fixed inset-y-0 right-0 z-30 w-80 max-w-[90vw] shadow-2xl xl:static xl:shadow-none"
@@ -102,9 +110,10 @@ watch(
     <ToastHost />
   </div>
 
-  <div v-else class="flex h-[100dvh] w-full flex-col overflow-hidden bg-[#f4f7fb]">
-    <GuestTopBar v-if="showGuestBar" />
-    <div class="min-h-0 flex-1 overflow-y-auto">
+  <div v-else class="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-[#f6f8fc]">
+    <div class="gemini-global-aura" aria-hidden="true" />
+    <GuestTopBar v-if="showGuestBar" class="relative z-20" />
+    <div class="relative z-10 min-h-0 flex-1 overflow-y-auto">
       <RouterView />
     </div>
     <ToastHost />

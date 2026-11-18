@@ -53,10 +53,11 @@ class AnonymousBudgetTestCase(APITestCase):
         self.assertIn("上限", blocked.json()["detail"])
 
     def test_total_byte_budget_is_enforced(self):
-        # Two files of 60 bytes fit into the 100 byte budget, the third does not.
-        self.assertEqual(self.upload("a.txt", b"x" * 60).status_code, 201)
-        self.assertEqual(self.upload("b.txt", b"y" * 60).status_code, 201)
-        blocked = self.upload("c.txt", b"z" * 60)
+        # 40 + 40 = 80 fits into the 100 byte budget; the third file would
+        # push the running total past it and gets rejected.
+        self.assertEqual(self.upload("a.txt", b"x" * 40).status_code, 201)
+        self.assertEqual(self.upload("b.txt", b"y" * 40).status_code, 201)
+        blocked = self.upload("c.txt", b"z" * 40)
         self.assertEqual(blocked.status_code, 429)
 
     def test_logged_in_uploads_are_not_blocked(self):

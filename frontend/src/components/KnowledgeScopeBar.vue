@@ -101,7 +101,7 @@ function toggleCollection(id: string): void {
 
     <div
       v-if="showPanel"
-      class="absolute bottom-full left-0 z-30 mb-2 w-[260px] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl"
+      class="absolute bottom-full left-0 z-30 mb-2 w-[260px] max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200 bg-white p-3 shadow-xl"
     >
       <p class="px-1 text-[10px] font-semibold uppercase tracking-[0.15em] text-ink-400">
         检索范围

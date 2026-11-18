@@ -466,18 +466,18 @@ onMounted(async () => {
 
 <template>
   <div class="accounts-page h-full overflow-y-auto">
-    <div class="relative z-10 mx-auto w-full max-w-[980px] px-4 pb-14 pt-7 sm:px-7 sm:pt-10">
-      <header class="flex items-start gap-3.5">
+    <div class="relative z-10 mx-auto w-full max-w-[980px] px-3 pb-14 pt-5 sm:px-7 sm:pt-10">
+      <header class="flex flex-wrap items-start gap-3.5">
         <span class="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-ink-900 text-white shadow-[0_14px_30px_-18px_rgba(15,23,42,.7)] sm:flex">
           <UserCog :size="22" :stroke-width="1.7" />
         </span>
-        <div>
-          <h1 class="text-[29px] font-medium tracking-[-0.04em] text-ink-900 sm:text-[34px]">账号管理</h1>
+        <div class="min-w-0">
+          <h1 class="text-[22px] font-medium tracking-[-0.04em] text-ink-900 sm:text-[34px]">账号管理</h1>
           <p class="mt-1.5 max-w-[560px] text-[12.5px] leading-6 text-ink-500">
             qzx 可新增、删除账号并设置权限；管理员可重置普通账号密码并查看其日志。
           </p>
         </div>
-        <div v-if="isAdmin" class="ml-auto flex shrink-0 items-center gap-2">
+        <div v-if="isAdmin" class="ml-auto flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto">
           <button
             v-if="auth.isSuper"
             type="button"
@@ -511,7 +511,7 @@ onMounted(async () => {
           当前账号 <span class="font-medium text-ink-700">{{ auth.user?.username || "访客" }}</span>
           不具备账号管理权限。请使用管理员账号登录。
         </p>
-        <div class="mt-5 flex gap-2">
+        <div class="mt-5 flex flex-wrap gap-2">
           <button type="button" class="btn-primary" @click="goLogin">
             <ShieldCheck :size="14" />
             切换账号
@@ -686,7 +686,7 @@ onMounted(async () => {
             <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-medium tabular-nums text-ink-500">
               {{ accounts.length }}
             </span>
-            <span class="ml-auto flex items-center gap-1 text-[9px] text-ink-400">
+            <span class="ml-auto hidden items-center gap-1 text-[9px] text-ink-400 sm:flex">
               <ShieldCheck :size="10" class="text-accent-500" />
               每个账号仅保留最近一次登录
             </span>

@@ -110,7 +110,7 @@ onMounted(load);
 
 <template>
   <div class="h-full overflow-y-auto bg-canvas">
-    <div class="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 lg:py-12">
+    <div class="mx-auto w-full max-w-3xl px-3 py-6 sm:px-6 sm:py-8 lg:py-12">
       <header class="flex items-center justify-between gap-3">
         <RouterLink to="/" class="inline-flex items-center gap-2">
           <BrandMark :size="24" />
@@ -138,7 +138,7 @@ onMounted(load);
 
       <template v-else-if="hasContent && content">
         <section class="mt-8 text-center">
-          <h1 class="text-[30px] font-bold tracking-tight text-ink-900">
+          <h1 class="text-2xl font-bold tracking-tight text-ink-900 sm:text-[30px]">
             {{ content.site_name || "缺页中断" }}
           </h1>
           <p v-if="content.tagline" class="mt-2 text-[14px] text-ink-500">{{ content.tagline }}</p>
@@ -148,7 +148,7 @@ onMounted(load);
           </p>
         </section>
 
-        <section v-if="content.intro" class="mt-8 rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
+        <section v-if="content.intro" class="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5">
           <h2 class="flex items-center gap-2 text-[14px] font-semibold text-ink-900">
             <Info :size="15" class="text-accent-600" />
             站点介绍
@@ -156,7 +156,7 @@ onMounted(load);
           <p class="mt-2.5 whitespace-pre-wrap break-words text-[13.5px] leading-7 text-ink-600">{{ content.intro }}</p>
         </section>
 
-        <section v-if="featureLines.length" class="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
+        <section v-if="featureLines.length" class="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5">
           <h2 class="flex items-center gap-2 text-[14px] font-semibold text-ink-900">
             <ListChecks :size="15" class="text-accent-600" />
             功能亮点
@@ -169,7 +169,7 @@ onMounted(load);
           </ul>
         </section>
 
-        <section v-if="content.guide" class="mt-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
+        <section v-if="content.guide" class="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5">
           <h2 class="flex items-center gap-2 text-[14px] font-semibold text-ink-900">
             <ScrollText :size="15" class="text-accent-600" />
             使用说明
@@ -181,7 +181,7 @@ onMounted(load);
           v-if="content.developer || content.contact || content.links.length"
           class="mt-4 grid gap-4 sm:grid-cols-2"
         >
-          <div v-if="content.developer || content.contact" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
+          <div v-if="content.developer || content.contact" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5">
             <h2 class="flex items-center gap-2 text-[14px] font-semibold text-ink-900">
               <User :size="15" class="text-accent-600" />
               开发与联系
@@ -194,7 +194,7 @@ onMounted(load);
               <span class="min-w-0 break-words">{{ content.contact }}</span>
             </p>
           </div>
-          <div v-if="content.links.length" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-soft">
+          <div v-if="content.links.length" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-soft sm:p-5">
             <h2 class="flex items-center gap-2 text-[14px] font-semibold text-ink-900">
               <ExternalLink :size="15" class="text-accent-600" />
               相关链接
@@ -278,12 +278,14 @@ onMounted(load);
           <div v-if="!form.links.length" class="rounded-xl bg-slate-50 px-3 py-2 text-[12px] text-ink-400">
             还没有链接，可点击「添加链接」。
           </div>
-          <div v-for="(link, index) in form.links" :key="index" class="flex items-center gap-2">
-            <input v-model="link.label" maxlength="100" class="input-base w-36 shrink-0" placeholder="名称" />
-            <input v-model="link.url" maxlength="500" class="input-base min-w-0 flex-1" placeholder="https://..." />
-            <button type="button" class="icon-button h-8 w-8 !min-h-0 !min-w-0 shrink-0 text-ink-300 hover:text-red-600" aria-label="移除链接" @click="removeLink(index)">
-              <Trash2 :size="14" />
-            </button>
+          <div v-for="(link, index) in form.links" :key="index" class="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input v-model="link.label" maxlength="100" class="input-base w-full sm:w-36 sm:shrink-0" placeholder="名称" />
+            <div class="flex min-w-0 items-center gap-2 sm:flex-1">
+              <input v-model="link.url" maxlength="500" class="input-base min-w-0 flex-1" placeholder="https://..." />
+              <button type="button" class="icon-button h-8 w-8 !min-h-0 !min-w-0 shrink-0 text-ink-300 hover:text-red-600" aria-label="移除链接" @click="removeLink(index)">
+                <Trash2 :size="14" />
+              </button>
+            </div>
           </div>
         </div>
       </div>

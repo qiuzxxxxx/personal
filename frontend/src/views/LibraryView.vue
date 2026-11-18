@@ -351,15 +351,15 @@ watch(
 
 <template>
   <div class="h-full overflow-y-auto bg-canvas">
-    <div class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-10">
+    <div class="mx-auto w-full max-w-6xl px-3 py-4 sm:px-6 sm:py-6 lg:py-10">
       <header class="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 class="text-[26px] font-semibold tracking-tight text-ink-900">私人资料库</h1>
+          <h1 class="text-[21px] font-semibold tracking-tight text-ink-900 sm:text-[26px]">私人资料库</h1>
           <p class="mt-1 text-[12.5px] text-ink-400">
             只有你能看到的文件，支持分类、标签、备注与任务关联。
           </p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <button
             type="button"
             class="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-[12.5px] font-medium text-ink-700 shadow-sm transition hover:border-accent-200"
@@ -386,11 +386,11 @@ watch(
         </div>
       </header>
 
-      <section class="mt-6 rounded-2xl border border-slate-200 bg-white p-3 shadow-soft">
+      <section class="mt-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-soft sm:mt-6">
         <div class="grid gap-2 sm:grid-cols-3">
           <select
             v-model="uploadFolder"
-            class="rounded-xl border border-slate-200 px-3 py-2 text-[12.5px] text-ink-700 outline-none focus:border-accent-300"
+            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-[12.5px] text-ink-700 outline-none focus:border-accent-300"
           >
             <option value="">未分类</option>
             <option v-for="folder in folders" :key="folder.id" :value="folder.id">
@@ -399,7 +399,7 @@ watch(
           </select>
           <select
             v-model="uploadTask"
-            class="rounded-xl border border-slate-200 px-3 py-2 text-[12.5px] text-ink-700 outline-none focus:border-accent-300"
+            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-[12.5px] text-ink-700 outline-none focus:border-accent-300"
           >
             <option value="">不关联任务</option>
             <option v-for="task in workspace.tasks" :key="task.id" :value="task.id">
@@ -410,7 +410,7 @@ watch(
             v-model="uploadTags"
             type="text"
             placeholder="标签，用逗号分隔"
-            class="rounded-xl border border-slate-200 px-3 py-2 text-[12.5px] outline-none focus:border-accent-300"
+            class="w-full rounded-xl border border-slate-200 px-3 py-2 text-[12.5px] outline-none focus:border-accent-300"
           />
         </div>
         <input
@@ -428,7 +428,7 @@ watch(
             <p class="px-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-ink-400">
               资料夹
             </p>
-            <ul class="mt-2 space-y-0.5">
+            <ul class="mt-2 max-h-48 space-y-0.5 overflow-y-auto lg:max-h-none">
               <li>
                 <button
                   type="button"
@@ -504,19 +504,19 @@ watch(
 
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
-            <div class="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5">
+            <div class="flex min-w-0 flex-1 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 sm:flex-none">
               <Search :size="14" class="text-ink-300" />
               <input
                 v-model="keyword"
                 type="search"
                 placeholder="按文件名或备注搜索"
-                class="w-44 bg-transparent text-[12.5px] outline-none placeholder:text-ink-300"
+                class="w-full min-w-0 bg-transparent text-[12.5px] outline-none placeholder:text-ink-300 sm:w-44"
                 @keyup.enter="page = 1; refresh()"
               />
             </div>
             <select
               v-model="fileType"
-              class="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-ink-600 outline-none"
+              class="w-auto rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[12px] text-ink-600 outline-none"
               @change="page = 1; refresh()"
             >
               <option v-for="option in fileTypes" :key="option.value" :value="option.value">
@@ -550,7 +550,7 @@ watch(
                 <li
                   v-for="material in items"
                   :key="material.id"
-                  class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-soft"
+                  class="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-soft"
                 >
                   <span class="shrink-0 text-ink-400">
                     <ImageIcon v-if="material.is_previewable" :size="16" />
@@ -562,16 +562,17 @@ watch(
                       <span>{{ formatSize(material.size_bytes) }}</span>
                       <span v-if="material.folder_name">{{ material.folder_name }}</span>
                       <span v-for="tag in material.tags" :key="tag.id">#{{ tag.name }}</span>
-                      <span v-if="material.remark">· {{ material.remark }}</span>
+                      <span v-if="material.remark" class="hidden sm:inline">· {{ material.remark }}</span>
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    class="shrink-0 text-[11.5px] font-medium text-ink-500 hover:text-accent-600"
-                    @click="openPreview(material)"
-                  >
-                    预览
-                  </button>
+                  <div class="flex shrink-0 items-center gap-1 sm:gap-3">
+                    <button
+                      type="button"
+                      class="shrink-0 text-[11.5px] font-medium text-ink-500 hover:text-accent-600"
+                      @click="openPreview(material)"
+                    >
+                      预览
+                    </button>
                   <button
                     v-if="!showTrash"
                     type="button"
@@ -618,6 +619,7 @@ watch(
                   >
                     <Trash2 :size="15" />
                   </button>
+                  </div>
                 </li>
               </ul>
             </section>

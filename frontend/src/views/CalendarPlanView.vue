@@ -21,8 +21,12 @@ const calendar = useCalendarStore();
 const workspace = useWorkspaceStore();
 const toast = useToastStore();
 
-const HOURS = [
-  "09", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+// 周视图 24 小时网格：凌晨 00–06 时段合并为一行"夜间"块（睡眠/晨间例行），
+// 其余时段逐小时展开，避免整页被 24 行拉得过长。
+const NIGHT_HOURS = ["00", "01", "02", "03", "04", "05", "06"];
+const DAY_HOURS = [
+  "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17", "18",
+  "19", "20", "21", "22", "23",
 ];
 // 周一索引的星期名常量；周视图逐格按真实日期取标签，月视图表头按用户
 // 偏好 week_starts_on 旋转（0=周日 / 1=周一 / 6=周六，与后端一致）。
@@ -48,6 +52,20 @@ const blockTitle = ref("");
 const blockDate = ref("");
 const blockStart = ref("14:00");
 const blockEnd = ref("15:00");
+const blockType = ref<"task" | "study" | "habit" | "sleep" | "wash">("task");
+const BLOCK_TYPE_OPTIONS: {
+  value: "task" | "study" | "habit" | "sleep" | "wash";
+  label: string;
+  title: string;
+  start: string;
+  end: string;
+}[] = [
+  { value: "task", label: "任务排期", title: "", start: "14:00", end: "15:00" },
+  { value: "study", label: "学习复习", title: "", start: "19:00", end: "20:00" },
+  { value: "habit", label: "每日例行", title: "", start: "21:00", end: "21:30" },
+  { value: "sleep", label: "睡眠", title: "睡眠", start: "00:00", end: "07:00" },
+  { value: "wash", label: "洗漱", title: "洗漱", start: "07:00", end: "07:20" },
+];
 
 const todayIso = localDateIso();
 const monthCursor = ref(`${todayIso.slice(0, 7)}-01`);
@@ -117,6 +135,15 @@ function blocksAt(iso: string, hour: string): CalendarBlock[] {
   );
 }
 
+function nightBlocksAt(iso: string): CalendarBlock[] {
+  return calendar.blocks
+    .filter(
+      (block) =>
+        block.day_date === iso && NIGHT_HOURS.includes(block.start_time.slice(0, 2)),
+    )
+    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+}
+
 function setSubView(view: CalendarSubView): void {
   calendar.subView = view;
   if (view === "month") void calendar.loadMonth(monthCursor.value);
@@ -180,11 +207,29 @@ async function removeBlock(block: CalendarBlock): Promise<void> {
 }
 
 function openBlockModal(iso?: string): void {
-  blockTitle.value = "";
+  const preset = BLOCK_TYPE_OPTIONS[0];
+  blockType.value = preset.value;
+  blockTitle.value = preset.title;
   blockDate.value = iso || calendar.weekStart || todayIso;
-  blockStart.value = "14:00";
-  blockEnd.value = "15:00";
+  blockStart.value = preset.start;
+  blockEnd.value = preset.end;
   newBlockOpen.value = true;
+}
+
+function onBlockTypeChange(): void {
+  const preset = BLOCK_TYPE_OPTIONS.find((o) => o.value === blockType.value);
+  if (!preset) return;
+  if (preset.title) blockTitle.value = preset.title;
+  blockStart.value = preset.start;
+  blockEnd.value = preset.end;
+}
+
+function blockBadgeClass(block: { block_type: string; is_completed: boolean }): string {
+  if (block.is_completed) return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  if (block.block_type === "sleep") return "border-indigo-200 bg-indigo-100/80 text-indigo-950";
+  if (block.block_type === "wash") return "border-teal-200 bg-teal-100/80 text-teal-950";
+  if (block.block_type === "habit") return "border-amber-200 bg-amber-100/80 text-amber-950";
+  return "border-blue-200 bg-blue-100/80 text-blue-950";
 }
 
 async function submitTask(): Promise<void> {
@@ -220,7 +265,7 @@ async function submitBlock(): Promise<void> {
       day_date: blockDate.value,
       start_time: blockStart.value,
       end_time: blockEnd.value,
-      block_type: "study",
+      block_type: blockType.value,
     });
     newBlockOpen.value = false;
     toast.success("日程已添加");
@@ -257,7 +302,7 @@ onActivated(() => {
 </script>
 
 <template>
-  <div class="space-y-4 p-4 sm:p-5">
+  <div class="space-y-4 p-3 sm:p-5">
     <div class="flex flex-wrap items-center gap-3">
       <div>
         <h1 class="text-lg font-semibold text-slate-900">时间轴计划工作台</h1>
@@ -273,7 +318,7 @@ onActivated(() => {
           :key="item.key"
           type="button"
           class="rounded-lg px-3 py-1.5 text-xs transition"
-          :class="calendar.subView === item.key ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-800'"
+          :class="calendar.subView === item.key ? 'bg-gradient-to-r from-[#4285f4] via-[#9b72cb] to-[#d96570] text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'"
           @click="setSubView(item.key as CalendarSubView)"
         >
           {{ item.label }}
@@ -293,7 +338,7 @@ onActivated(() => {
           </span>
           <button
             type="button"
-            class="ml-auto inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-[11px] font-medium text-white transition hover:bg-blue-700"
+            class="ml-auto inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-[#4285f4] via-[#9b72cb] to-[#d96570] shadow-sm px-2.5 py-1.5 text-[11px] font-medium text-white transition hover:bg-blue-700"
             @click="newTaskOpen = true"
           >
             <Plus :size="12" />
@@ -378,7 +423,7 @@ onActivated(() => {
             </button>
             <button
               type="button"
-              class="ml-1 inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1.5 text-[11px] font-medium text-white transition hover:bg-blue-700"
+              class="ml-1 inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-[#4285f4] via-[#9b72cb] to-[#d96570] shadow-sm px-2.5 py-1.5 text-[11px] font-medium text-white transition hover:bg-blue-700"
               @click="openBlockModal()"
             >
               <Plus :size="12" />
@@ -390,7 +435,7 @@ onActivated(() => {
         <div v-if="calendar.subView === 'week'" class="mt-3 overflow-x-auto">
           <div class="min-w-[720px]">
             <div class="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] gap-1">
-              <div />
+              <div class="sticky left-0 z-10 bg-white" />
               <div
                 v-for="day in weekDays"
                 :key="day.iso"
@@ -401,14 +446,56 @@ onActivated(() => {
                 <p class="text-[10px] text-slate-400">{{ day.dayNumber }}</p>
               </div>
 
-              <template v-for="hour in HOURS" :key="hour">
-                <div class="pt-1 text-right text-[10px] tabular-nums text-slate-400">
+              <!-- 夜间合并行：00:00–06:59 的睡眠/晨间块收进一格 -->
+              <div class="sticky left-0 z-10 bg-white pt-1 text-center text-[10px] tabular-nums text-indigo-400">
+                🌙<br />00–06
+              </div>
+              <div
+                v-for="day in weekDays"
+                :key="`${day.iso}-night`"
+                class="min-h-[48px] rounded-lg border border-indigo-100 bg-indigo-50/30 p-1 transition"
+                :class="{
+                  'drop-active': dropActive === `${day.iso}-night`,
+                  'preview-highlight':
+                    calendar.previewSlot?.day_date === day.iso &&
+                    NIGHT_HOURS.includes(calendar.previewSlot?.start_time?.slice(0, 2) ?? ''),
+                }"
+                @dragover.prevent="dropActive = `${day.iso}-night`"
+                @dragleave="dropActive = ''"
+                @drop="onDrop(day.iso, '00', $event)"
+              >
+                <button
+                  v-for="block in nightBlocksAt(day.iso)"
+                  :key="block.id"
+                  type="button"
+                  class="group mb-1 block w-full rounded-md border px-1.5 py-1 text-left text-[10px] leading-4 transition"
+                  :class="blockBadgeClass(block)"
+                  @click="toggleBlock(block)"
+                >
+                  <span class="flex items-center gap-1">
+                    <span>{{ block.is_completed ? "✅" : "🕒" }}</span>
+                    <span class="min-w-0 flex-1 truncate">{{ block.title }}</span>
+                    <span
+                      class="hidden shrink-0 text-slate-400 group-hover:inline"
+                      @click.stop="removeBlock(block)"
+                    >
+                      <Trash2 :size="10" />
+                    </span>
+                  </span>
+                  <span class="block truncate text-[9px] opacity-70">
+                    {{ block.start_time }} - {{ block.end_time }}
+                  </span>
+                </button>
+              </div>
+
+              <template v-for="hour in DAY_HOURS" :key="hour">
+                <div class="sticky left-0 z-10 bg-white pt-1 text-right text-[10px] tabular-nums text-slate-400">
                   {{ hour }}:00
                 </div>
                 <div
                   v-for="day in weekDays"
                   :key="`${day.iso}-${hour}`"
-                  class="min-h-[58px] rounded-lg border border-slate-100 bg-slate-50/40 p-1 transition"
+                  class="min-h-[48px] rounded-lg border border-slate-100 bg-slate-50/40 p-1 transition"
                   :class="{
                     'drop-active': dropActive === `${day.iso}-${hour}`,
                     'preview-highlight':
@@ -424,11 +511,7 @@ onActivated(() => {
                     :key="block.id"
                     type="button"
                     class="group mb-1 block w-full rounded-md border px-1.5 py-1 text-left text-[10px] leading-4 transition"
-                    :class="
-                      block.is_completed
-                        ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-                        : 'border-blue-200 bg-blue-100/80 text-blue-950'
-                    "
+                    :class="blockBadgeClass(block)"
                     @click="toggleBlock(block)"
                   >
                     <span class="flex items-center gap-1">
@@ -476,7 +559,7 @@ onActivated(() => {
             <div
               v-for="cell in monthCells"
               :key="cell.iso"
-              class="min-h-[72px] rounded-lg border p-1"
+              class="min-h-14 sm:min-h-[72px] rounded-lg border p-1"
               :class="
                 cell.isToday
                   ? 'border-blue-400 bg-blue-50/50'
@@ -491,7 +574,7 @@ onActivated(() => {
                 :key="block.id"
                 class="mt-0.5 truncate rounded bg-blue-100/80 px-1 py-0.5 text-[9px] text-blue-900"
               >
-                {{ block.start_time }} {{ block.title }}
+                <span class="hidden sm:inline">{{ block.start_time }} </span>{{ block.title }}
               </p>
               <p v-if="cell.blocks.length > 2" class="mt-0.5 text-[9px] text-slate-400">
                 +{{ cell.blocks.length - 2 }} 项
@@ -553,6 +636,18 @@ onActivated(() => {
     <ModalShell :open="newBlockOpen" title="添加日程" subtitle="手动添加一个时间块" max-width="max-w-md" @close="newBlockOpen = false">
       <div class="space-y-3">
         <label class="block space-y-1 text-xs text-slate-500">
+          类型
+          <select
+            v-model="blockType"
+            class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
+            @change="onBlockTypeChange"
+          >
+            <option v-for="option in BLOCK_TYPE_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+        <label class="block space-y-1 text-xs text-slate-500">
           标题
           <input v-model="blockTitle" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
         </label>
@@ -560,7 +655,7 @@ onActivated(() => {
           日期
           <input v-model="blockDate" type="date" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />
         </label>
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label class="block space-y-1 text-xs text-slate-500">
             开始
             <input v-model="blockStart" type="time" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400" />

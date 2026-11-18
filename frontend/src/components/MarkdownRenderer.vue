@@ -27,5 +27,5 @@ async function onClick(event: MouseEvent): Promise<void> {
 </script>
 
 <template>
-  <div class="markdown-body" @click="onClick" v-html="html" />
+  <div class="markdown-body min-w-0 max-w-full [&>pre]:overflow-x-auto" @click="onClick" v-html="html" />
 </template>

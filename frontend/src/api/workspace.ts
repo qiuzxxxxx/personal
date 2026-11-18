@@ -326,7 +326,7 @@ export async function fetchCalendarMonth(month: string): Promise<CalendarMonthPa
 export async function createCalendarBlock(payload: {
   task_id?: string | null;
   title?: string;
-  block_type?: "task" | "study" | "habit";
+  block_type?: "task" | "study" | "habit" | "sleep" | "wash";
   day_date: string;
   start_time: string;
   end_time?: string;
@@ -340,7 +340,7 @@ export async function updateCalendarBlock(
   id: string,
   payload: {
     title?: string;
-    block_type?: "task" | "study" | "habit";
+    block_type?: "task" | "study" | "habit" | "sleep" | "wash";
     day_date?: string;
     start_time?: string;
     end_time?: string;

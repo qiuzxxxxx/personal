@@ -121,7 +121,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="space-y-4 p-4 sm:p-5">
+  <div class="space-y-4 p-3 sm:p-5">
     <div>
       <h1 class="text-lg font-semibold text-slate-900">工作区配置</h1>
       <p class="text-xs text-slate-400">默认模型、周起始日、时区与系统维护</p>
@@ -142,7 +142,7 @@ onMounted(() => {
       <div class="mt-3 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
+          class="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-[#4285f4] via-[#9b72cb] to-[#d96570] shadow-sm px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
           :disabled="testing"
           @click="testConnection"
         >
@@ -200,7 +200,7 @@ onMounted(() => {
       </div>
       <button
         type="button"
-        class="mt-3 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
+        class="mt-3 rounded-lg bg-gradient-to-r from-[#4285f4] via-[#9b72cb] to-[#d96570] shadow-sm px-3 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700 disabled:opacity-50"
         :disabled="preferenceLoading || savingPreference"
         @click="submitPreference"
       >
@@ -226,7 +226,7 @@ onMounted(() => {
         </button>
         <input
           v-model="maintenanceReason"
-          class="min-w-[220px] flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400"
+          class="w-full min-w-0 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-400 sm:w-auto sm:min-w-[220px] sm:flex-1"
           placeholder="维护说明（可选）"
         />
         <button

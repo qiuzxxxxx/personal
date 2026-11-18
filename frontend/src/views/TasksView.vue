@@ -247,10 +247,10 @@ onActivated(() => {
 
 <template>
   <div class="h-full overflow-y-auto bg-canvas">
-    <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:py-10">
+    <div class="mx-auto w-full max-w-5xl px-3 py-4 sm:px-6 sm:py-6 lg:py-10">
       <header class="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 class="text-[26px] font-semibold tracking-tight text-ink-900">全部任务</h1>
+          <h1 class="text-[22px] font-semibold tracking-tight text-ink-900 sm:text-[26px]">全部任务</h1>
           <p class="mt-1 text-[12.5px] text-ink-400">共 {{ store.taskCount }} 条记录</p>
         </div>
         <RouterLink
@@ -345,7 +345,7 @@ onActivated(() => {
               v-model="keyword"
               type="search"
               placeholder="搜索标题或描述"
-              class="w-40 bg-transparent text-[12.5px] text-ink-800 outline-none placeholder:text-ink-300"
+              class="w-32 bg-transparent text-[12.5px] text-ink-800 outline-none placeholder:text-ink-300 sm:w-40"
               @keyup.enter="refresh"
             />
           </div>
@@ -363,7 +363,7 @@ onActivated(() => {
         <li
           v-for="task in visibleTasks"
           :key="task.id"
-          class="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-soft"
+          class="rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-soft sm:px-4"
         >
           <div class="flex items-center gap-3">
             <button

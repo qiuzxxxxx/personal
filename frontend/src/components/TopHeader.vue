@@ -88,7 +88,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <header class="flex h-14 shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white px-4">
+  <header class="flex h-14 shrink-0 items-center gap-3 border-b border-white/80 bg-white/75 px-4 shadow-[0_4px_24px_-12px_rgba(66,133,244,0.12)] backdrop-blur-xl">
     <button
       type="button"
       class="icon-button h-10 w-10 lg:hidden"
@@ -104,7 +104,7 @@ onUnmounted(() => {
         alt="缺页中断"
         class="h-8 w-8 rounded-lg object-contain drop-shadow-[0_4px_8px_rgba(59,101,246,0.14)]"
       />
-      <span class="text-lg font-bold tracking-tight text-blue-600">缺页中断</span>
+      <span class="gemini-text text-lg font-bold tracking-tight">缺页中断</span>
     </RouterLink>
 
     <span class="hidden h-4 w-px bg-slate-200 xl:block" />
@@ -112,9 +112,18 @@ onUnmounted(() => {
       个人生产力 · 学习 · 知识 · AI 工作台
     </span>
 
+    <!-- 手机端空间有限：搜索只留图标按钮，日历/设置快捷入口从侧栏进入 -->
     <button
       type="button"
-      class="mx-auto flex h-9 w-full min-w-0 max-w-xl items-center gap-2 rounded-full border border-slate-200/80 bg-slate-100/90 px-3.5 text-left text-xs text-slate-500 transition hover:bg-slate-200/70"
+      class="icon-button mx-auto h-9 w-9 !min-h-0 !min-w-0 sm:hidden"
+      aria-label="搜索"
+      @click="ui.openCommandPalette()"
+    >
+      <Search :size="16" />
+    </button>
+    <button
+      type="button"
+      class="mx-auto hidden h-9 w-full min-w-0 max-w-xl items-center gap-2 rounded-full border border-indigo-200/60 bg-white/85 px-3.5 text-left text-xs text-slate-500 shadow-[0_2px_14px_-4px_rgba(66,133,244,0.12)] backdrop-blur transition hover:border-purple-300/80 hover:bg-white hover:shadow-[0_6px_20px_-6px_rgba(155,114,203,0.22)] sm:flex"
       @click="ui.openCommandPalette()"
     >
       <Search :size="14" />
@@ -125,7 +134,7 @@ onUnmounted(() => {
     <div class="flex shrink-0 items-center gap-1">
       <button
         type="button"
-        class="icon-button h-9 w-9 !min-h-0 !min-w-0"
+        class="icon-button hidden h-9 w-9 !min-h-0 !min-w-0 sm:flex"
         title="日历与计划"
         @click="go('/calendar')"
       >
@@ -140,12 +149,12 @@ onUnmounted(() => {
         <Bell :size="17" />
         <span
           v-if="announcements.hasUnread"
-          class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-blue-600"
+          class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-gradient-to-r from-[#4285f4] to-[#d96570]"
         />
       </button>
       <button
         type="button"
-        class="icon-button h-9 w-9 !min-h-0 !min-w-0"
+        class="icon-button hidden h-9 w-9 !min-h-0 !min-w-0 sm:flex"
         title="工作区配置"
         @click="go('/settings')"
       >
@@ -153,7 +162,7 @@ onUnmounted(() => {
       </button>
       <button
         type="button"
-        class="ml-1 hidden items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-700 transition hover:bg-blue-100 sm:flex"
+        class="gemini-badge ml-1 hidden items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm transition hover:brightness-95 sm:flex"
         @click="ui.toggleCopilot()"
       >
         <Sparkles :size="14" />
@@ -163,7 +172,7 @@ onUnmounted(() => {
       <div class="relative ml-1">
         <button
           type="button"
-          class="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 text-xs font-semibold text-white shadow-sm"
+          class="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-tr from-[#4285f4] via-[#9b72cb] to-[#d96570] text-xs font-semibold text-white shadow-[0_4px_12px_-2px_rgba(155,114,203,0.4)]"
           :title="`${auth.user?.username || '用户'} · ${auth.user?.role || ''}`"
           @click="profileOpen = !profileOpen"
         >

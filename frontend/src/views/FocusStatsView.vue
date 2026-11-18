@@ -46,8 +46,9 @@ const chartOption = computed<EChartsOption>(() => ({
           type: "linear",
           x: 0, y: 0, x2: 0, y2: 1,
           colorStops: [
-            { offset: 0, color: "#22d3ee" },
-            { offset: 1, color: "#2563eb" },
+            { offset: 0, color: "#d96570" },
+            { offset: 0.5, color: "#9b72cb" },
+            { offset: 1, color: "#4285f4" },
           ],
         },
       },
@@ -82,13 +83,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="space-y-4 p-4 sm:p-5">
+  <div class="space-y-4 p-3 sm:p-5">
     <div>
       <h1 class="text-lg font-semibold text-slate-900">专注与统计</h1>
       <p class="text-xs text-slate-400">本周专注时长、次数与主力方向</p>
     </div>
 
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div class="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3">
       <div class="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
         <div class="flex items-center gap-2 text-xs text-slate-400">
           <Clock :size="14" />
@@ -109,7 +110,7 @@ onMounted(() => {
           <span class="text-xs font-normal text-slate-400">次</span>
         </p>
       </div>
-      <div class="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+      <div class="col-span-2 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:col-span-1">
         <div class="flex items-center gap-2 text-xs text-slate-400">
           <Target :size="14" />
           主力专注方向
@@ -125,7 +126,7 @@ onMounted(() => {
         <BarChart3 :size="15" class="text-blue-600" />
         <h2 class="text-sm font-semibold text-slate-800">近 7 日专注时长分布</h2>
       </div>
-      <EChart v-if="series.length" class="mt-3" :option="chartOption" :height="240" />
+      <EChart v-if="series.length" class="mt-3 !h-44 sm:!h-60" :option="chartOption" :height="240" />
       <div v-else class="flex h-56 items-center justify-center text-xs text-slate-400">
         暂无专注记录
       </div>

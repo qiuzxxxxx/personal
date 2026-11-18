@@ -153,6 +153,8 @@ class CalendarBlock(VersionedModel):
         ("task", "任务排期"),
         ("study", "学习复习"),
         ("habit", "每日例行"),
+        ("sleep", "睡眠"),
+        ("wash", "洗漱"),
     ]
     ORIGIN_CHOICES = [
         ("manual", "手动创建"),

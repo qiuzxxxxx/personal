@@ -494,7 +494,7 @@ watch(
           </div>
         </div>
 
-        <div class="flex items-center gap-2 sm:pt-1">
+        <div class="flex flex-wrap items-center gap-2 sm:pt-1">
           <button
             v-if="announcement"
             type="button"
@@ -1150,20 +1150,24 @@ watch(
 <style scoped>
 .transfer-page {
   background:
-    radial-gradient(900px 500px at 88% -10%, rgba(100, 133, 255, 0.07), transparent 65%),
-    radial-gradient(700px 500px at 5% 105%, rgba(20, 184, 166, 0.045), transparent 65%),
-    #f8fafc;
+    radial-gradient(950px 520px at 85% -8%, rgba(66, 133, 244, 0.14), transparent 65%),
+    radial-gradient(820px 480px at 18% 12%, rgba(155, 114, 203, 0.13), transparent 65%),
+    radial-gradient(760px 500px at 12% 102%, rgba(217, 101, 112, 0.1), transparent 65%),
+    transparent;
 }
 
 .transfer-aura {
   position: absolute;
-  top: -260px;
+  top: -240px;
   left: 14%;
-  width: 520px;
-  height: 420px;
+  width: 760px;
+  height: 480px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(147, 197, 253, 0.14), transparent 66%);
-  filter: blur(50px);
+  background:
+    radial-gradient(circle at 30% 50%, rgba(66, 133, 244, 0.22), transparent 60%),
+    radial-gradient(circle at 65% 45%, rgba(155, 114, 203, 0.2), transparent 62%),
+    radial-gradient(circle at 82% 65%, rgba(217, 101, 112, 0.16), transparent 64%);
+  filter: blur(60px);
   pointer-events: none;
 }
 

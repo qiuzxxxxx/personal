@@ -190,7 +190,7 @@ defineExpose({ setDraft, focus, openFilePicker, addFiles, clear });
 
 <template>
   <div
-    class="composer-shell relative rounded-[27px] border border-slate-200/90 bg-white/95 shadow-composer backdrop-blur-xl transition duration-300 focus-within:border-accent-300/80 focus-within:shadow-[0_28px_80px_-28px_rgba(48,87,223,0.28)]"
+    class="composer-shell relative rounded-[28px] border border-purple-200/70 bg-white/92 shadow-composer backdrop-blur-2xl transition duration-300 focus-within:border-purple-300/90 focus-within:shadow-[0_28px_80px_-24px_rgba(155,114,203,0.34)]"
     :class="{ 'opacity-90': disabled }"
     @dragenter="onDragEnter"
     @dragover.prevent
@@ -295,7 +295,7 @@ defineExpose({ setDraft, focus, openFilePicker, addFiles, clear });
         </button>
         <button
           type="button"
-          class="flex h-10 w-10 items-center justify-center rounded-full bg-ink-900 text-white shadow-sm transition hover:bg-accent-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+          class="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-tr from-[#4285f4] via-[#9b72cb] to-[#d96570] text-white shadow-[0_6px_18px_-4px_rgba(155,114,203,0.5)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:from-slate-200 disabled:via-slate-200 disabled:to-slate-200 disabled:text-slate-400 disabled:shadow-none"
           :disabled="!canSend"
           :aria-label="busy ? '正在生成' : '发送'"
           @click="submit"

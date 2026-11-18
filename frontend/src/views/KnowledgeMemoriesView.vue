@@ -183,15 +183,15 @@ onMounted(async () => {
 
 <template>
   <div class="h-full overflow-y-auto bg-canvas">
-    <div class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:py-10">
+    <div class="mx-auto w-full max-w-4xl px-3 py-4 sm:px-6 sm:py-6 lg:py-10">
       <header class="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 class="text-[26px] font-semibold tracking-tight text-ink-900">个人记忆</h1>
+          <h1 class="text-[21px] font-semibold tracking-tight text-ink-900 sm:text-[26px]">个人记忆</h1>
           <p class="mt-1 text-[12.5px] text-ink-400">
             只有你确认过的条目会作为背景提供给 AI，随时可以修改、停用、忘记或彻底删除。
           </p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <button
             type="button"
             class="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-[12.5px] font-medium text-ink-700 shadow-sm transition hover:border-accent-200"
@@ -275,7 +275,7 @@ onMounted(async () => {
                 来源：{{ memory.source_ref }}
               </p>
             </div>
-            <div class="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+            <div class="ml-auto flex w-full shrink-0 flex-wrap items-center justify-end gap-1.5 sm:w-auto">
               <button
                 v-if="memory.status === 'suggested'"
                 type="button"

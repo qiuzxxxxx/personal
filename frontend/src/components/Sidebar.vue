@@ -60,7 +60,7 @@ function isActive(path: string): boolean {
   </Transition>
 
   <aside
-    class="fixed inset-y-0 left-0 z-40 flex min-h-0 w-56 shrink-0 flex-col border-r border-slate-200/80 bg-white transition-transform duration-300 ease-out lg:static lg:z-auto lg:translate-x-0"
+    class="fixed inset-y-0 left-0 z-40 flex min-h-0 w-56 shrink-0 flex-col border-r border-white/80 bg-white/72 backdrop-blur-xl transition-transform duration-300 ease-out lg:static lg:z-auto lg:translate-x-0"
     :class="ui.sidebarOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full'"
   >
     <div class="flex h-14 shrink-0 items-center gap-2 px-3">
@@ -86,7 +86,7 @@ function isActive(path: string): boolean {
         class="group mb-0.5 flex items-center gap-2.5 rounded-xl px-3 py-2 transition"
         :class="
           isActive(item.path)
-            ? 'bg-blue-50 font-medium text-blue-700'
+            ? 'gemini-nav-active'
             : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900'
         "
         @click="ui.closeMobileSidebar()"
@@ -95,7 +95,7 @@ function isActive(path: string): boolean {
           :is="item.icon"
           :size="17"
           :stroke-width="1.8"
-          :class="isActive(item.path) ? 'text-blue-600' : 'text-slate-400'"
+          :class="isActive(item.path) ? 'text-[#7b61ff]' : 'text-slate-400'"
         />
         <span class="min-w-0 flex-1 text-[13px]">{{ item.label }}</span>
       </RouterLink>
@@ -108,7 +108,7 @@ function isActive(path: string): boolean {
         class="group mb-0.5 flex items-center gap-2.5 rounded-xl px-3 py-2 transition"
         :class="
           isActive(item.path)
-            ? 'bg-blue-50 font-medium text-blue-700'
+            ? 'gemini-nav-active'
             : 'text-slate-600 hover:bg-slate-100/80 hover:text-slate-900'
         "
         @click="ui.closeMobileSidebar()"
@@ -117,15 +117,15 @@ function isActive(path: string): boolean {
           :is="item.icon"
           :size="17"
           :stroke-width="1.8"
-          :class="isActive(item.path) ? 'text-blue-600' : 'text-slate-400'"
+          :class="isActive(item.path) ? 'text-[#7b61ff]' : 'text-slate-400'"
         />
         <span class="min-w-0 flex-1 text-[13px]">{{ item.label }}</span>
       </RouterLink>
     </nav>
 
     <div class="shrink-0 border-t border-slate-100 p-3">
-      <div class="flex items-center gap-2.5 rounded-xl bg-slate-50 p-2.5">
-        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+      <div class="flex items-center gap-2.5 rounded-xl border border-purple-200/40 bg-gradient-to-r from-[#4285f4]/10 via-[#9b72cb]/10 to-[#d96570]/10 p-2.5">
+        <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-tr from-[#4285f4] via-[#9b72cb] to-[#d96570] text-white shadow-sm">
           <Layers :size="16" />
         </span>
         <div class="min-w-0">

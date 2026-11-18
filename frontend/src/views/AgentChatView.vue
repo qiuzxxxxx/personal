@@ -561,7 +561,7 @@ function formatMessageTime(value: string): string {
     <template v-else>
     <header class="relative z-10 flex h-[62px] shrink-0 items-center gap-3 px-4 sm:px-7">
       <div class="flex min-w-0 items-center gap-2.5">
-        <span class="hidden h-5 w-5 items-center justify-center rounded-lg bg-ink-900 text-white sm:flex">
+        <span class="hidden h-5 w-5 items-center justify-center rounded-lg bg-gradient-to-tr from-[#4285f4] via-[#9b72cb] to-[#d96570] text-white shadow-sm sm:flex">
           <Sparkles :size="11" />
         </span>
         <p class="hidden text-[10px] font-semibold uppercase tracking-[0.16em] text-ink-400 sm:block">
@@ -628,7 +628,7 @@ function formatMessageTime(value: string): string {
           <div class="animate-fade-up">
             <div class="mb-5 flex items-center gap-2">
               <span class="inline-flex items-center gap-1.5 rounded-full border border-white bg-white/75 py-1.5 pl-2 pr-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-ink-500 shadow-sm backdrop-blur">
-                <span class="flex h-4 w-4 items-center justify-center rounded-full bg-accent-500 text-white">
+                <span class="flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-tr from-[#4285f4] via-[#9b72cb] to-[#d96570] text-white">
                   <Sparkles :size="9" />
                 </span>
                 Multimodal Agent
@@ -740,7 +740,7 @@ function formatMessageTime(value: string): string {
                     </span>
                   </div>
 
-                  <div v-if="!message.streaming && message.content" class="mt-2.5 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                  <div v-if="!message.streaming && message.content" class="mt-2.5 flex items-center gap-1 opacity-100 transition group-hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
                     <button
                       type="button"
                       class="message-action"
@@ -782,7 +782,7 @@ function formatMessageTime(value: string): string {
                 <div class="min-w-0">
                   <div
                     v-if="message.content"
-                    class="whitespace-pre-wrap break-words rounded-[22px] rounded-br-[7px] bg-[#edf0f6] px-4 py-3 text-[14px] leading-[1.7] text-ink-900 sm:text-[14.5px]"
+                    class="whitespace-pre-wrap break-words rounded-[22px] rounded-br-[7px] border border-purple-200/50 bg-gradient-to-br from-[#eef4ff] via-[#f3effb] to-[#fdf2f4] px-4 py-3 text-[14px] leading-[1.7] text-ink-900 shadow-sm sm:text-[14.5px]"
                   >{{ message.content }}</div>
 
                   <div
@@ -804,7 +804,7 @@ function formatMessageTime(value: string): string {
                     {{ formatMessageTime(message.created_at) }}
                   </p>
                 </div>
-                <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink-900 text-[10px] font-semibold text-white">
+                <span class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr from-[#4285f4] via-[#9b72cb] to-[#d96570] text-[10px] font-semibold text-white shadow-sm">
                   {{ (auth.user?.username || "你").slice(0, 1).toUpperCase() }}
                 </span>
               </div>

@@ -335,7 +335,7 @@ export interface CalendarBlock {
   id: string;
   task_id: string | null;
   title: string;
-  block_type: "task" | "study" | "habit";
+  block_type: "task" | "study" | "habit" | "sleep" | "wash";
   day_date: string;
   start_time: string;
   end_time: string;

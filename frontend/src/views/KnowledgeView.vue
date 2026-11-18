@@ -270,15 +270,15 @@ onMounted(async () => {
 
 <template>
   <div class="h-full overflow-y-auto bg-canvas">
-    <div class="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-10">
+    <div class="mx-auto w-full max-w-6xl px-3 py-4 sm:px-6 sm:py-6 lg:py-10">
       <header class="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 class="text-[26px] font-semibold tracking-tight text-ink-900">个人知识库</h1>
+          <h1 class="text-[21px] font-semibold tracking-tight text-ink-900 sm:text-[26px]">个人知识库</h1>
           <p class="mt-1 text-[12.5px] text-ink-400">
             笔记、私人资料与每日记录都可以加入这里，AI 只在你允许的范围内检索。
           </p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <button
             type="button"
             class="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-[12.5px] font-medium text-ink-700 shadow-sm transition hover:border-accent-200"
@@ -311,7 +311,7 @@ onMounted(async () => {
             <p class="px-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-ink-400">
               知识集合
             </p>
-            <ul class="mt-2 space-y-0.5">
+            <ul class="mt-2 max-h-48 space-y-0.5 overflow-y-auto lg:max-h-none">
               <li>
                 <button
                   type="button"
@@ -382,13 +382,13 @@ onMounted(async () => {
 
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
-            <div class="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5">
+            <div class="flex min-w-0 flex-1 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 sm:flex-none">
               <Search :size="14" class="text-ink-300" />
               <input
                 v-model="keyword"
                 type="search"
                 placeholder="搜索标题或正文"
-                class="w-44 bg-transparent text-[12.5px] outline-none placeholder:text-ink-300"
+                class="w-full min-w-0 bg-transparent text-[12.5px] outline-none placeholder:text-ink-300 sm:w-44"
                 @keyup.enter="runSearch"
               />
             </div>
@@ -474,7 +474,7 @@ onMounted(async () => {
                     <span>{{ document.chunk_count }} 个片段</span>
                   </p>
                 </div>
-                <div class="flex shrink-0 items-center gap-1.5">
+                <div class="flex w-full shrink-0 flex-wrap items-center gap-1.5 sm:w-auto">
                   <button
                     type="button"
                     class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-medium transition"
@@ -553,7 +553,7 @@ onMounted(async () => {
 
     <div
       v-if="showEditor"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/60 p-4"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/60 p-2 sm:p-4"
       @click.self="showEditor = false"
     >
       <div class="flex max-h-[88vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
@@ -565,7 +565,7 @@ onMounted(async () => {
             关闭
           </button>
         </div>
-        <div class="flex-1 overflow-y-auto p-4">
+        <div class="flex-1 overflow-y-auto p-3 sm:p-4">
           <input
             v-model="draftTitle"
             type="text"

@@ -12,7 +12,7 @@ const toast = useToastStore();
         <div
           v-for="item in toast.items"
           :key="item.id"
-          class="pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-2xl border bg-white/95 px-4 py-3 shadow-elevated backdrop-blur-xl"
+          class="pointer-events-auto flex w-full max-w-[calc(100vw-2rem)] items-start gap-3 rounded-2xl border bg-white/95 px-4 py-3 shadow-elevated backdrop-blur-xl sm:max-w-sm"
           :class="{
             'border-green-200/80': item.kind === 'success',
             'border-red-200/80': item.kind === 'error',
@@ -35,7 +35,7 @@ const toast = useToastStore();
           <p class="min-w-0 flex-1 pt-0.5 text-[13px] leading-5 text-ink-700">{{ item.message }}</p>
           <button
             type="button"
-            class="mt-0.5 rounded-md p-1 text-ink-400 transition hover:bg-black/[0.04] hover:text-ink-700"
+            class="mt-0.5 rounded-md p-1.5 text-ink-400 transition hover:bg-black/[0.04] hover:text-ink-700 sm:p-1"
             aria-label="关闭通知"
             @click="toast.dismiss(item.id)"
           >

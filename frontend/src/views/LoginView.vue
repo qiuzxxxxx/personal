@@ -149,7 +149,7 @@ function mountParticleField(canvas: HTMLCanvasElement | null): (() => void) | nu
     speed: (0.00009 + Math.random() * 0.00025) * (Math.random() > 0.5 ? 1 : -1),
     phase: Math.random() * Math.PI * 2,
     size: 0.45 + Math.random() * 1.3,
-    hue: [184, 197, 215, 232, 250][Math.floor(Math.random() * 5)],
+    hue: [214, 238, 268, 292, 345][Math.floor(Math.random() * 5)],
   }));
 
   function stop(): void {
@@ -414,7 +414,7 @@ function mountParticleField(canvas: HTMLCanvasElement | null): (() => void) | nu
 
               <button
                 type="submit"
-                class="group flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-ink-900 text-[12px] font-semibold text-white shadow-[0_14px_30px_-18px_rgba(15,23,42,0.75)] transition duration-200 hover:bg-accent-600 disabled:cursor-not-allowed disabled:opacity-60"
+                class="btn-primary group flex h-11 w-full items-center justify-center gap-2 !rounded-xl text-[12px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                 :disabled="submitting || auth.loading"
               >
                 <Loader2 v-if="submitting || auth.loading" :size="16" class="animate-spin" />
@@ -467,9 +467,10 @@ function mountParticleField(canvas: HTMLCanvasElement | null): (() => void) | nu
 <style scoped>
 .visual-panel {
   background:
-    radial-gradient(1200px 620px at 75% 5%, rgba(61, 100, 255, 0.24), transparent 62%),
-    radial-gradient(900px 700px at 15% 95%, rgba(13, 148, 136, 0.18), transparent 62%),
-    linear-gradient(145deg, #08101f 0%, #0b1426 48%, #0d1a2f 100%);
+    radial-gradient(1200px 620px at 78% 8%, rgba(66, 133, 244, 0.32), transparent 62%),
+    radial-gradient(950px 680px at 50% 48%, rgba(155, 114, 203, 0.24), transparent 64%),
+    radial-gradient(900px 700px at 15% 95%, rgba(217, 101, 112, 0.22), transparent 62%),
+    linear-gradient(145deg, #090d1a 0%, #10152c 48%, #17132a 100%);
 }
 
 .visual-grid {
@@ -493,7 +494,7 @@ function mountParticleField(canvas: HTMLCanvasElement | null): (() => void) | nu
   right: -120px;
   width: 450px;
   height: 450px;
-  background: rgba(83, 116, 255, 0.26);
+  background: radial-gradient(circle, rgba(66, 133, 244, 0.36), rgba(155, 114, 203, 0.28));
 }
 
 .visual-glow-b {
@@ -501,7 +502,7 @@ function mountParticleField(canvas: HTMLCanvasElement | null): (() => void) | nu
   left: -100px;
   width: 480px;
   height: 480px;
-  background: rgba(20, 184, 166, 0.14);
+  background: radial-gradient(circle, rgba(217, 101, 112, 0.28), rgba(155, 114, 203, 0.2));
 }
 
 .visual-ring {
@@ -545,7 +546,7 @@ function mountParticleField(canvas: HTMLCanvasElement | null): (() => void) | nu
   width: min(68%, 520px);
   aspect-ratio: 1;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(34, 211, 238, 0.24), rgba(59, 130, 246, 0.14) 34%, rgba(99, 102, 241, 0.07) 53%, transparent 72%);
+  background: radial-gradient(circle, rgba(66, 133, 244, 0.3), rgba(155, 114, 203, 0.22) 38%, rgba(217, 101, 112, 0.14) 58%, transparent 74%);
   filter: blur(18px);
   animation: particle-bloom 8s ease-in-out infinite alternate;
 }

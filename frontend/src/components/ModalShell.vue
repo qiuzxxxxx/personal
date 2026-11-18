@@ -100,7 +100,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
           tabindex="-1"
           style="border: 1px solid var(--apple-border)"
         >
-          <header class="flex items-start gap-4 border-b px-6 py-5" style="border-color: var(--apple-border)">
+          <header class="flex items-start gap-4 border-b px-4 py-4 sm:px-6 sm:py-5" style="border-color: var(--apple-border)">
             <div class="min-w-0 flex-1">
               <h2 :id="titleId" class="text-[17px] font-semibold tracking-tight text-ink-900">
                 {{ title }}
@@ -122,13 +122,13 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown));
             </button>
           </header>
 
-          <div class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5">
             <slot />
           </div>
 
           <footer
             v-if="$slots.footer"
-            class="flex items-center justify-end gap-2 border-t px-6 py-4"
+            class="flex items-center justify-end gap-2 border-t px-4 py-3 sm:px-6 sm:py-4"
             style="border-color: var(--apple-border); background: #fafafa"
           >
             <slot name="footer" />

@@ -60,7 +60,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="space-y-4 p-4 sm:p-5">
+  <div class="space-y-4 p-3 sm:p-5">
     <div class="flex flex-wrap items-center gap-3">
       <div>
         <h1 class="text-lg font-semibold text-slate-900">间隔复习（SM-2 记忆曲线）</h1>
@@ -68,7 +68,7 @@ onMounted(() => {
       </div>
       <button
         type="button"
-        class="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-700"
+        class="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-[#4285f4] via-[#9b72cb] to-[#d96570] shadow-sm px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-700"
         @click="createOpen = true"
       >
         <Plus :size="13" />
@@ -80,7 +80,7 @@ onMounted(() => {
 
     <div
       v-else-if="reviews.current"
-      class="mx-auto max-w-2xl rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm"
+      class="mx-auto max-w-2xl rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm sm:p-6"
     >
       <div class="flex items-center gap-2">
         <span class="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-medium text-blue-700">
@@ -102,7 +102,7 @@ onMounted(() => {
       <button
         v-if="!reviews.revealed"
         type="button"
-        class="mt-6 w-full rounded-xl bg-blue-600 py-2.5 text-sm font-medium text-white transition hover:bg-blue-700"
+        class="mt-6 w-full rounded-xl bg-gradient-to-r from-[#4285f4] via-[#9b72cb] to-[#d96570] shadow-sm py-2.5 text-sm font-medium text-white transition hover:bg-blue-700"
         @click="reviews.flip()"
       >
         显示答案

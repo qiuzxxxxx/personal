@@ -30,14 +30,14 @@ onMounted(() => {
 </script>
 
 <template>
-  <header class="flex h-12 shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white/85 px-4">
+  <header class="flex h-12 shrink-0 items-center gap-3 border-b border-white/80 bg-white/75 px-4 backdrop-blur-xl">
     <RouterLink to="/transfer" class="flex items-center gap-2">
       <img
         :src="brandMark"
         alt="缺页中断"
         class="h-7 w-7 rounded-lg object-contain drop-shadow-[0_4px_8px_rgba(59,101,246,0.14)]"
       />
-      <span class="text-[15px] font-bold tracking-tight text-blue-600">缺页中断</span>
+      <span class="gemini-text text-[15px] font-bold tracking-tight">缺页中断</span>
       <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">游客模式</span>
     </RouterLink>
 

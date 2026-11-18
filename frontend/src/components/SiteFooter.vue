@@ -15,7 +15,7 @@ const icp = {
 <template>
   <footer class="shrink-0 border-t bg-white/60 backdrop-blur-xl" style="border-color: var(--apple-border)">
     <div
-      class="mx-auto flex w-full max-w-[1140px] flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 py-2 text-[10px] text-ink-400 sm:justify-between"
+      class="mx-auto flex w-full max-w-[1140px] flex-wrap items-center justify-center gap-x-4 gap-y-1.5 px-3 py-2 text-[10px] text-ink-400 sm:justify-between sm:gap-y-1 sm:px-4"
     >
       <p>
         © 2026 缺页中断 · 自托管个人空间 ·

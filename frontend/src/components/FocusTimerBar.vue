@@ -36,18 +36,18 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex shrink-0 flex-wrap items-center gap-2 border-t border-slate-200/90 bg-white px-4 py-2.5">
+  <div class="flex shrink-0 flex-wrap items-center gap-2 border-t border-white/80 bg-white/78 px-4 py-2.5 shadow-[0_-4px_24px_-12px_rgba(66,133,244,0.12)] backdrop-blur-xl">
     <div class="flex items-center gap-2">
       <span class="flex items-center gap-1.5 text-xs font-medium text-slate-500">
         <Clock :size="14" />
         专注计时
       </span>
-      <span class="font-mono text-xl font-bold tabular-nums text-slate-900">
+      <span class="gemini-text font-mono text-xl font-bold tabular-nums">
         {{ focus.formattedTime }}
       </span>
       <button
         type="button"
-        class="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-blue-700"
+        class="inline-flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#4285f4] via-[#9b72cb] to-[#d96570] px-3.5 py-1.5 text-xs font-medium text-white shadow-[0_4px_14px_-3px_rgba(155,114,203,0.45)] transition hover:brightness-105"
         @click="focus.startOrPause()"
       >
         <Pause v-if="focus.running" :size="13" />
@@ -93,11 +93,11 @@ onMounted(() => {
         @click="router.push('/focus')"
       >
         <BarChart3 :size="14" />
-        专注统计
+        <span class="hidden sm:inline">专注统计</span>
       </button>
       <button
         type="button"
-        class="inline-flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+        class="hidden items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 sm:inline-flex"
         @click="router.push('/focus')"
       >
         <History :size="14" />

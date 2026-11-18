@@ -97,11 +97,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <aside class="flex w-80 max-w-[90vw] shrink-0 flex-col border-l border-slate-200/80 bg-white">
+  <aside class="flex w-80 max-w-[90vw] shrink-0 flex-col border-l border-white/80 bg-white/78 backdrop-blur-2xl">
     <div class="flex h-12 items-center gap-2 border-b border-slate-100 px-4">
-      <Sparkles :size="16" class="text-blue-600" />
-      <span class="text-sm font-semibold text-slate-800">AI 助手</span>
-      <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">DeepSeek 4.1</span>
+      <Sparkles :size="16" class="text-[#9b72cb]" />
+      <span class="gemini-text text-sm font-bold">AI 助手</span>
+      <span class="gemini-badge rounded-full px-2 py-0.5 text-[10px] font-medium">DeepSeek 4.1</span>
       <button
         type="button"
         class="ml-auto rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
@@ -120,7 +120,7 @@ onMounted(() => {
         class="px-2 py-2.5 transition"
         :class="
           activeTab === tab.key
-            ? 'border-b-2 border-blue-600 font-medium text-blue-700'
+            ? 'border-b-2 border-[#9b72cb] font-semibold text-[#5348c7]'
             : 'text-slate-500 hover:text-slate-800'
         "
         @click="activeTab = tab.key"
@@ -140,7 +140,7 @@ onMounted(() => {
         <div
           v-for="suggestion in suggestions"
           :key="suggestion.task_id"
-          class="mb-2 rounded-xl border border-blue-200/80 bg-blue-50/70 p-3"
+          class="mb-2 rounded-xl border border-purple-200/70 bg-gradient-to-br from-[#4285f4]/[0.08] via-[#9b72cb]/[0.08] to-[#d96570]/[0.06] p-3 shadow-sm"
         >
           <p class="flex items-center gap-1.5 text-xs font-semibold text-blue-900">
             <CalendarClock :size="13" />
@@ -160,7 +160,7 @@ onMounted(() => {
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] text-white transition hover:bg-blue-700"
+              class="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-[#4285f4] via-[#9b72cb] to-[#d96570] px-2.5 py-1 text-[11px] text-white shadow-sm transition hover:brightness-105"
               @click="confirm(suggestion)"
             >
               <Check :size="11" />
@@ -225,7 +225,7 @@ onMounted(() => {
           />
           <button
             type="button"
-            class="rounded-lg bg-blue-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-blue-700"
+            class="rounded-lg bg-gradient-to-r from-[#4285f4] via-[#9b72cb] to-[#d96570] px-3 py-2 text-xs font-medium text-white shadow-sm transition hover:brightness-105"
             @click="openAgent"
           >
             发送
@@ -238,7 +238,7 @@ onMounted(() => {
       <div class="flex-1 rounded-xl bg-slate-50 px-3 py-2 text-[11px] leading-4 text-slate-500">
         需要我继续为你优化本周计划吗？
       </div>
-      <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 font-mono text-xs font-bold text-white">
+      <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-tr from-[#4285f4] via-[#9b72cb] to-[#d96570] font-mono text-xs font-bold text-white shadow-sm">
         &gt;_
       </div>
     </div>

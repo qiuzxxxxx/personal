@@ -375,15 +375,15 @@ onBeforeUnmount(() => {});
                 </div>
                 <h3 class="mt-1 truncate text-[14px] font-semibold text-ink-900 group-hover:text-accent-600">{{ post.title || "无标题" }}</h3>
                 <p class="mt-1 line-clamp-2 text-[12px] leading-5 text-ink-600">{{ post.content || "(仅附件)" }}</p>
-                <div class="mt-2 flex items-center gap-3 text-[10px] text-ink-400">
+                <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-ink-400">
                   <span>{{ post.reply_count }} 条回复</span>
-                  <span v-if="post.file_name">📎 {{ post.file_name }}</span>
+                  <span v-if="post.file_name" class="min-w-0 max-w-full truncate">📎 {{ post.file_name }}</span>
                   <span v-if="post.last_reply_at">最后回复：{{ formatTime(post.last_reply_at) }}</span>
                 </div>
               </div>
               <button
                 type="button"
-                class="shrink-0 rounded-full p-1.5 text-ink-300 transition hover:bg-rose-50 hover:text-rose-600 opacity-0 group-hover:opacity-100"
+                class="shrink-0 rounded-full p-1.5 text-ink-300 transition hover:bg-rose-50 hover:text-rose-600 opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
                 :disabled="deleting"
                 @click.stop="openDeleteDialog({ type: 'post', id: post.id })"
               >
@@ -445,8 +445,8 @@ onBeforeUnmount(() => {});
                   <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 text-[8px] font-semibold text-white">
                     {{ initials(reply.author_username || "N") }}
                   </span>
-                  <span class="text-[11px] font-semibold text-ink-700">{{ reply.author_name }}</span>
-                  <span class="text-[9px] text-ink-400">{{ formatTime(reply.created_at) }}</span>
+                  <span class="min-w-0 truncate text-[11px] font-semibold text-ink-700">{{ reply.author_name }}</span>
+                  <span class="shrink-0 whitespace-nowrap text-[9px] text-ink-400">{{ formatTime(reply.created_at) }}</span>
                   <button
                     type="button"
                     class="ml-auto shrink-0 rounded-full p-1 text-ink-300 transition hover:bg-rose-50 hover:text-rose-600"
@@ -543,7 +543,7 @@ onBeforeUnmount(() => {});
               选择文件
             </button>
             <input ref="newPostFileRef" type="file" class="hidden" :accept="accept" @change="newPostFile = ($event.target as HTMLInputElement).files?.[0] || null" />
-            <span v-if="newPostFile" class="text-[11px] text-ink-500">{{ newPostFile.name }} ({{ formatBytes(newPostFile.size) }})</span>
+            <span v-if="newPostFile" class="min-w-0 truncate text-[11px] text-ink-500">{{ newPostFile.name }} ({{ formatBytes(newPostFile.size) }})</span>
           </div>
         </div>
       </div>
@@ -587,20 +587,24 @@ onBeforeUnmount(() => {});
 <style scoped>
 .bbs-page {
   background:
-    radial-gradient(800px 440px at 15% 0%, rgba(100, 133, 255, 0.08), transparent 65%),
-    radial-gradient(720px 520px at 90% 100%, rgba(20, 184, 166, 0.06), transparent 65%),
-    #f6f8fb;
+    radial-gradient(860px 480px at 15% 0%, rgba(66, 133, 244, 0.14), transparent 65%),
+    radial-gradient(780px 500px at 85% 15%, rgba(155, 114, 203, 0.14), transparent 65%),
+    radial-gradient(720px 520px at 90% 100%, rgba(217, 101, 112, 0.11), transparent 65%),
+    transparent;
 }
 
 .bbs-aura {
   position: absolute;
-  top: -260px;
+  top: -240px;
   right: 8%;
-  width: 620px;
-  height: 500px;
+  width: 720px;
+  height: 520px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(125, 211, 252, 0.18), transparent 65%);
-  filter: blur(45px);
+  background:
+    radial-gradient(circle at 35% 45%, rgba(66, 133, 244, 0.22), transparent 60%),
+    radial-gradient(circle at 70% 55%, rgba(155, 114, 203, 0.2), transparent 62%),
+    radial-gradient(circle at 50% 75%, rgba(217, 101, 112, 0.16), transparent 65%);
+  filter: blur(56px);
   pointer-events: none;
 }
 

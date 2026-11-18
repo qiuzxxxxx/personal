@@ -160,14 +160,14 @@ onUnmounted(() => {
 
 <template>
   <div class="h-full overflow-y-auto bg-canvas">
-    <div class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:py-10">
+    <div class="mx-auto w-full max-w-5xl px-3 py-4 sm:px-6 sm:py-6 lg:py-10">
       <header class="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-400">
             <CalendarDays :size="14" />
             {{ today?.date || "—" }} · {{ today?.weekday || "" }}
           </p>
-          <h1 class="mt-2 text-[26px] font-semibold tracking-tight text-ink-900">今日工作台</h1>
+          <h1 class="mt-2 text-[22px] font-semibold tracking-tight text-ink-900 sm:text-[26px]">今日工作台</h1>
           <p class="mt-1 text-[12.5px] text-ink-400">
             今日完成 {{ today?.completed_today || 0 }} 项 ·
             逾期 {{ today?.overdue_count || 0 }} 项 ·
@@ -252,7 +252,7 @@ onUnmounted(() => {
           <li
             v-for="task in openTasks"
             :key="task.id"
-            class="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-soft transition hover:border-accent-200"
+            class="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-soft transition hover:border-accent-200 sm:px-4"
           >
             <button
               type="button"
@@ -310,7 +310,7 @@ onUnmounted(() => {
           <li
             v-for="task in unscheduledTasks"
             :key="task.id"
-            class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3"
+            class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 sm:px-4"
           >
             <div class="min-w-0 flex-1">
               <p class="truncate text-[13.5px] text-ink-800">{{ task.title }}</p>

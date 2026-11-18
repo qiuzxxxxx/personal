@@ -94,9 +94,9 @@ onMounted(refresh);
 
 <template>
   <div class="h-full overflow-y-auto bg-canvas">
-    <div class="mx-auto w-full max-w-4xl px-4 py-6 sm:px-6 lg:py-10">
+    <div class="mx-auto w-full max-w-4xl px-3 py-4 sm:px-6 sm:py-6 lg:py-10">
       <header>
-        <h1 class="text-[26px] font-semibold tracking-tight text-ink-900">项目</h1>
+        <h1 class="text-[22px] font-semibold tracking-tight text-ink-900 sm:text-[26px]">项目</h1>
         <p class="mt-1 text-[12.5px] text-ink-400">
           项目用于归类任务，归档后仍可查询原有任务。
         </p>
@@ -143,7 +143,7 @@ onMounted(refresh);
         <li
           v-for="project in store.projects"
           :key="project.id"
-          class="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-soft"
+          class="rounded-2xl border border-slate-200 bg-white px-3 py-3 shadow-soft sm:px-4"
         >
           <div class="flex items-center gap-3">
             <div class="min-w-0 flex-1">
